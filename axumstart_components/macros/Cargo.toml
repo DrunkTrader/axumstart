@@ -2,6 +2,9 @@
 name = "axumstart_components_macros"
 version = "0.1.0"
 edition = "2024"
+description = "Proc macros for axumstart_components (Component, ComponentConfig, #[component])"
+license = "MIT"
+repository = "https://github.com/axumstart/axumstart"
 
 [lib]
 proc-macro = true

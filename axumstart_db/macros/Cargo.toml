@@ -2,6 +2,9 @@
 name = "axumstart_db_macros"
 version = "0.1.0"
 edition = "2024"
+description = "Proc macro powering axumstart_db's #[repository], SqlxInsert, and SqlxUpdate"
+license = "MIT"
+repository = "https://github.com/axumstart/axumstart"
 
 [lib]
 proc-macro = true
