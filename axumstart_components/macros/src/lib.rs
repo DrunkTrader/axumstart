@@ -5,6 +5,8 @@ use syn::{
   parse_macro_input,
 };
 
+mod krate;
+
 #[proc_macro_attribute]
 pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
   if !attr.is_empty() {
@@ -56,6 +58,7 @@ fn extract_as_trait(input: &ItemStruct) -> syn::Result<Option<Path>> {
 
 fn component_struct(as_trait: Option<Path>, input: ItemStruct) -> TokenStream {
   let name = &input.ident;
+  let ax = krate::path();
 
   let fields_init = match &input.fields {
     Fields::Named(fields) => {
@@ -76,9 +79,9 @@ fn component_struct(as_trait: Option<Path>, input: ItemStruct) -> TokenStream {
   };
 
   let blueprint = quote! {
-    #[::axumstart_components::async_trait]
-    impl ::axumstart_components::ComponentBlueprint for #name {
-      async fn new(ctx: &::axumstart_components::ComponentProvider) -> Self {
+    #[#ax::async_trait]
+    impl #ax::ComponentBlueprint for #name {
+      async fn new(ctx: &#ax::ComponentProvider) -> Self {
         #fields_init
       }
     }
@@ -86,7 +89,7 @@ fn component_struct(as_trait: Option<Path>, input: ItemStruct) -> TokenStream {
 
   let dyn_blueprint = match &as_trait {
     Some(trait_path) => quote! {
-      impl ::axumstart_components::DynComponentBlueprint for #name {
+      impl #ax::DynComponentBlueprint for #name {
         type Dyn = dyn #trait_path;
         fn upcast(arc: ::std::sync::Arc<Self>) -> ::std::sync::Arc<dyn #trait_path> {
           arc
@@ -97,9 +100,9 @@ fn component_struct(as_trait: Option<Path>, input: ItemStruct) -> TokenStream {
   };
 
   let registration = quote! {
-    ::axumstart_components::inventory::submit! {
-      ::axumstart_components::ComponentRegistration(|ctx: &::axumstart_components::ComponentProvider| {
-        ::axumstart_components::RegisterProbe::<#name>::new().register(ctx);
+    #ax::inventory::submit! {
+      #ax::ComponentRegistration(|ctx: &#ax::ComponentProvider| {
+        #ax::RegisterProbe::<#name>::new().register(ctx);
       })
     }
   };
@@ -116,6 +119,7 @@ fn component_fn(input: ItemFn) -> TokenStream {
   let sig = &input.sig;
   let fn_name = &sig.ident;
   let is_async = sig.asyncness.is_some();
+  let ax = krate::path();
 
   let return_ty = match &sig.output {
     ReturnType::Type(_, ty) => ty,
@@ -166,11 +170,11 @@ fn component_fn(input: ItemFn) -> TokenStream {
   };
 
   let registration = quote! {
-    ::axumstart_components::inventory::submit! {
-      ::axumstart_components::ComponentRegistration(|ctx: &::axumstart_components::ComponentProvider| {
-        ::axumstart_components::FactoryProbe::<#return_ty>::new().register(
+    #ax::inventory::submit! {
+      #ax::ComponentRegistration(|ctx: &#ax::ComponentProvider| {
+        #ax::FactoryProbe::<#return_ty>::new().register(
           ctx,
-          |ctx: ::axumstart_components::ComponentProvider| async move { #call_expr },
+          |ctx: #ax::ComponentProvider| async move { #call_expr },
         );
       })
     }
@@ -215,6 +219,7 @@ impl syn::parse::Parse for EnvVarArgs {
 
 fn component_config_struct(input: ItemStruct) -> TokenStream {
   let name = &input.ident;
+  let ax = krate::path();
 
   let fields = match &input.fields {
     Fields::Named(fields) => fields,
@@ -277,18 +282,18 @@ fn component_config_struct(input: ItemStruct) -> TokenStream {
   }
 
   let blueprint = quote! {
-    #[::axumstart_components::async_trait]
-    impl ::axumstart_components::ComponentBlueprint for #name {
-      async fn new(_ctx: &::axumstart_components::ComponentProvider) -> Self {
+    #[#ax::async_trait]
+    impl #ax::ComponentBlueprint for #name {
+      async fn new(_ctx: &#ax::ComponentProvider) -> Self {
         Self { #(#field_inits),* }
       }
     }
   };
 
   let registration = quote! {
-    ::axumstart_components::inventory::submit! {
-      ::axumstart_components::ComponentRegistration(|ctx: &::axumstart_components::ComponentProvider| {
-        ::axumstart_components::RegisterProbe::<#name>::new().register(ctx);
+    #ax::inventory::submit! {
+      #ax::ComponentRegistration(|ctx: &#ax::ComponentProvider| {
+        #ax::RegisterProbe::<#name>::new().register(ctx);
       })
     }
   };

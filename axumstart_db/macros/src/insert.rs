@@ -69,6 +69,7 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
 /// Postgres/SQLite: `RETURNING *` gets the written row back in one round-trip.
 fn returning_impl(name: &syn::Ident, field_names: &[&syn::Ident]) -> syn::Result<TokenStream2> {
+    let db = crate::krate::db_path();
     let cols = field_names.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(", ");
     let placeholders =
         (1..=field_names.len()).map(dialect::placeholder).collect::<Vec<_>>().join(", ");
@@ -94,8 +95,8 @@ fn returning_impl(name: &syn::Ident, field_names: &[&syn::Ident]) -> syn::Result
                 executor: E,
             ) -> ::sqlx::Result<Row>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db>,
-                Row: for<'r> ::sqlx::FromRow<'r, <::axumstart_db::Db as ::sqlx::Database>::Row> + Send + Unpin,
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
+                Row: for<'r> ::sqlx::FromRow<'r, <#db::Db as ::sqlx::Database>::Row> + Send + Unpin,
             {
                 static __SQL: ::std::sync::OnceLock<::std::boxed::Box<str>> =
                     ::std::sync::OnceLock::new();
@@ -115,7 +116,7 @@ fn returning_impl(name: &syn::Ident, field_names: &[&syn::Ident]) -> syn::Result
                 executor: E,
             ) -> ::sqlx::Result<()>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db>,
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
             {
                 static __SQL_VOID: ::std::sync::OnceLock<::std::boxed::Box<str>> =
                     ::std::sync::OnceLock::new();
@@ -136,7 +137,7 @@ fn returning_impl(name: &syn::Ident, field_names: &[&syn::Ident]) -> syn::Result
                 executor: E,
             ) -> ::sqlx::Result<()>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db>,
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
             {
                 static __SQL_IGNORE: ::std::sync::OnceLock<::std::boxed::Box<str>> =
                     ::std::sync::OnceLock::new();
@@ -157,13 +158,13 @@ fn returning_impl(name: &syn::Ident, field_names: &[&syn::Ident]) -> syn::Result
                 executor: E,
             ) -> ::sqlx::Result<::std::vec::Vec<Row>>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db>,
-                Row: for<'r> ::sqlx::FromRow<'r, <::axumstart_db::Db as ::sqlx::Database>::Row> + Send + Unpin,
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
+                Row: for<'r> ::sqlx::FromRow<'r, <#db::Db as ::sqlx::Database>::Row> + Send + Unpin,
             {
                 if rows.is_empty() {
                     return ::std::result::Result::Ok(::std::vec::Vec::new());
                 }
-                let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(
+                let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(
                     ::std::format!(#insert_all_prefix_template, table),
                 );
                 __qb.push_values(rows, |mut __b, __row| {
@@ -180,12 +181,12 @@ fn returning_impl(name: &syn::Ident, field_names: &[&syn::Ident]) -> syn::Result
                 executor: E,
             ) -> ::sqlx::Result<()>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db>,
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
             {
                 if rows.is_empty() {
                     return ::std::result::Result::Ok(());
                 }
-                let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(
+                let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(
                     ::std::format!(#insert_all_prefix_template, table),
                 );
                 __qb.push_values(rows, |mut __b, __row| {
@@ -202,8 +203,8 @@ fn returning_impl(name: &syn::Ident, field_names: &[&syn::Ident]) -> syn::Result
                 executor: E,
             ) -> ::sqlx::Result<Row>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db>,
-                Row: for<'r> ::sqlx::FromRow<'r, <::axumstart_db::Db as ::sqlx::Database>::Row> + Send + Unpin,
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
+                Row: for<'r> ::sqlx::FromRow<'r, <#db::Db as ::sqlx::Database>::Row> + Send + Unpin,
             {
                 static __SQL_UPSERT: ::std::sync::OnceLock<::std::boxed::Box<str>> =
                     ::std::sync::OnceLock::new();
@@ -238,6 +239,7 @@ fn returning_impl(name: &syn::Ident, field_names: &[&syn::Ident]) -> syn::Result
 /// out combining these methods with `#[transactional]`'s `&mut DbConnection`, which isn't
 /// `Copy`; only pool-based calls work for insert/insert_all/upsert on MySQL).
 fn mysql_impl(name: &syn::Ident, field_names: &[&syn::Ident], key_col: &str) -> syn::Result<TokenStream2> {
+    let db = crate::krate::db_path();
     let cols = field_names.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(", ");
     let placeholders = (1..=field_names.len()).map(dialect::placeholder).collect::<Vec<_>>().join(", ");
 
@@ -273,8 +275,8 @@ fn mysql_impl(name: &syn::Ident, field_names: &[&syn::Ident], key_col: &str) -> 
                 executor: E,
             ) -> ::sqlx::Result<Row>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db> + ::std::marker::Copy,
-                Row: for<'r> ::sqlx::FromRow<'r, <::axumstart_db::Db as ::sqlx::Database>::Row> + Send + Unpin,
+                E: ::sqlx::Executor<'e, Database = #db::Db> + ::std::marker::Copy,
+                Row: for<'r> ::sqlx::FromRow<'r, <#db::Db as ::sqlx::Database>::Row> + Send + Unpin,
             {
                 static __INSERT_SQL: ::std::sync::OnceLock<::std::boxed::Box<str>> =
                     ::std::sync::OnceLock::new();
@@ -307,7 +309,7 @@ fn mysql_impl(name: &syn::Ident, field_names: &[&syn::Ident], key_col: &str) -> 
                 executor: E,
             ) -> ::sqlx::Result<()>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db>,
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
             {
                 static __INSERT_SQL_VOID: ::std::sync::OnceLock<::std::boxed::Box<str>> =
                     ::std::sync::OnceLock::new();
@@ -328,7 +330,7 @@ fn mysql_impl(name: &syn::Ident, field_names: &[&syn::Ident], key_col: &str) -> 
                 executor: E,
             ) -> ::sqlx::Result<()>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db>,
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
             {
                 static __SQL_IGNORE: ::std::sync::OnceLock<::std::boxed::Box<str>> =
                     ::std::sync::OnceLock::new();
@@ -352,14 +354,14 @@ fn mysql_impl(name: &syn::Ident, field_names: &[&syn::Ident], key_col: &str) -> 
                 executor: E,
             ) -> ::sqlx::Result<::std::vec::Vec<Row>>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db> + ::std::marker::Copy,
-                Row: for<'r> ::sqlx::FromRow<'r, <::axumstart_db::Db as ::sqlx::Database>::Row> + Send + Unpin,
+                E: ::sqlx::Executor<'e, Database = #db::Db> + ::std::marker::Copy,
+                Row: for<'r> ::sqlx::FromRow<'r, <#db::Db as ::sqlx::Database>::Row> + Send + Unpin,
             {
                 if rows.is_empty() {
                     return ::std::result::Result::Ok(::std::vec::Vec::new());
                 }
                 let __count = rows.len() as u64;
-                let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(
+                let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(
                     ::std::format!(#insert_all_prefix_template, table),
                 );
                 __qb.push_values(rows, |mut __b, __row| {
@@ -388,12 +390,12 @@ fn mysql_impl(name: &syn::Ident, field_names: &[&syn::Ident], key_col: &str) -> 
                 executor: E,
             ) -> ::sqlx::Result<()>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db>,
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
             {
                 if rows.is_empty() {
                     return ::std::result::Result::Ok(());
                 }
-                let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(
+                let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(
                     ::std::format!(#insert_all_prefix_template, table),
                 );
                 __qb.push_values(rows, |mut __b, __row| {
@@ -412,8 +414,8 @@ fn mysql_impl(name: &syn::Ident, field_names: &[&syn::Ident], key_col: &str) -> 
                 executor: E,
             ) -> ::sqlx::Result<Row>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db> + ::std::marker::Copy,
-                Row: for<'r> ::sqlx::FromRow<'r, <::axumstart_db::Db as ::sqlx::Database>::Row> + Send + Unpin,
+                E: ::sqlx::Executor<'e, Database = #db::Db> + ::std::marker::Copy,
+                Row: for<'r> ::sqlx::FromRow<'r, <#db::Db as ::sqlx::Database>::Row> + Send + Unpin,
             {
                 static __SQL_UPSERT: ::std::sync::OnceLock<::std::boxed::Box<str>> =
                     ::std::sync::OnceLock::new();

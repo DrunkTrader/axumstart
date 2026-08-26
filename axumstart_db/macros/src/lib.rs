@@ -3,6 +3,7 @@ use proc_macro::TokenStream;
 mod dialect;
 mod dsl;
 mod insert;
+mod krate;
 mod repository;
 mod update;
 

@@ -73,6 +73,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let vis = trait_def.vis.clone();
     let struct_name = format_ident!("Db{}", trait_name);
     let ctx = Ctx { table: &table, joins: &joins };
+    let db = crate::krate::db_path();
+    let components = crate::krate::components_path();
 
     let mut errors: Vec<TokenStream2> = Vec::new();
     let unique_map = collect_attr_map(&mut trait_def, "unique", &mut errors);
@@ -118,8 +120,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mock_repo_impl = if mock {
         quote! {
             #[cfg(test)]
-            impl ::axumstart_db::Repository for #mock_name {
-                fn pool(&self) -> &::axumstart_db::DbPool {
+            impl #db::Repository for #mock_name {
+                fn pool(&self) -> &#db::DbPool {
                     panic!("pool() called on mock")
                 }
             }
@@ -130,21 +132,21 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let component_impls = if component {
         quote! {
-            #[::axumstart_components::async_trait]
-            impl ::axumstart_components::ComponentBlueprint for #struct_name {
-                async fn new(ctx: &::axumstart_components::ComponentProvider) -> Self {
-                    Self { pool: ctx.get_cloned::<::axumstart_db::DbPool>().await }
+            #[#components::async_trait]
+            impl #components::ComponentBlueprint for #struct_name {
+                async fn new(ctx: &#components::ComponentProvider) -> Self {
+                    Self { pool: ctx.get_cloned::<#db::DbPool>().await }
                 }
             }
-            impl ::axumstart_components::DynComponentBlueprint for #struct_name {
+            impl #components::DynComponentBlueprint for #struct_name {
                 type Dyn = dyn #trait_name;
                 fn upcast(arc: ::std::sync::Arc<Self>) -> ::std::sync::Arc<dyn #trait_name> {
                     arc
                 }
             }
-            ::axumstart_components::inventory::submit! {
-                ::axumstart_components::ComponentRegistration(|ctx: &::axumstart_components::ComponentProvider| {
-                    ::axumstart_components::RegisterProbe::<#struct_name>::new().register(ctx);
+            #components::inventory::submit! {
+                #components::ComponentRegistration(|ctx: &#components::ComponentProvider| {
+                    #components::RegisterProbe::<#struct_name>::new().register(ctx);
                 })
             }
         }
@@ -164,17 +166,17 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         #vis struct #struct_name {
-            pool: ::axumstart_db::DbPool,
+            pool: #db::DbPool,
         }
 
         impl #struct_name {
-            pub fn new(pool: ::axumstart_db::DbPool) -> Self {
+            pub fn new(pool: #db::DbPool) -> Self {
                 Self { pool }
             }
         }
 
-        impl ::axumstart_db::Repository for #struct_name {
-            fn pool(&self) -> &::axumstart_db::DbPool {
+        impl #db::Repository for #struct_name {
+            fn pool(&self) -> &#db::DbPool {
                 &self.pool
             }
         }
@@ -385,9 +387,10 @@ fn process_transactional(
 }
 
 fn make_tx_sig(sig: &Signature) -> Signature {
+    let db = crate::krate::db_path();
     let mut tx_sig = sig.clone();
     tx_sig.ident = format_ident!("{}_tx", sig.ident);
-    let conn: FnArg = syn::parse_quote!(conn: &mut ::axumstart_db::DbConnection);
+    let conn: FnArg = syn::parse_quote!(conn: &mut #db::DbConnection);
     tx_sig.inputs.insert(1, conn);
     tx_sig
 }
@@ -402,10 +405,11 @@ fn gen_method(
 ) -> (TokenStream2, TokenStream2) {
     let sig = &m.sig;
     let name = sig.ident.to_string();
+    let db = crate::krate::db_path();
     let unique_col = unique_map.get(&name).map(|(c, _)| c.as_str());
     let date_col = created_at_map.get(&name).map(|(c, _)| c.as_str());
     let order_cols = order_by_map.get(&name).map(|c| c.as_slice());
-    match gen_body(&name, sig, ctx, quote!(::axumstart_db::Repository::pool(self)), unique_col, date_col, order_cols) {
+    match gen_body(&name, sig, ctx, quote!(#db::Repository::pool(self)), unique_col, date_col, order_cols) {
         Ok((body, probe)) => {
             let probe = if unchecked.contains(&name) { quote!() } else { probe };
             (quote! { #sig { #body } }, probe)
@@ -439,6 +443,7 @@ fn gen_body(
     date_col: Option<&str>,
     order_cols: Option<&[String]>,
 ) -> syn::Result<(TokenStream2, TokenStream2)> {
+    let db = crate::krate::db_path();
     let dispatch_name = match order_cols {
         Some(_) => name.strip_suffix("_ordered").unwrap_or(name),
         None => name,
@@ -488,7 +493,7 @@ fn gen_body(
         gen_set(sig, ctx, rest, exec)
     } else if dispatch_name == "pool" {
         no_order_by(sig, order_cols, name)?;
-        Ok((quote! { ::axumstart_db::Repository::pool(self) }, quote!()))
+        Ok((quote! { #db::Repository::pool(self) }, quote!()))
     } else {
         Err(syn::Error::new(
             sig.ident.span(),
@@ -665,6 +670,7 @@ fn make_bool_probe(span: Span, ty: &Type, field: &str) -> TokenStream2 {
 /// `binds` must be the same bind-expression slice whose indices `chunks` was built
 /// against (see `dsl::build_where`'s `bind_offset` parameter).
 fn chunk_statements(chunks: &[WhereChunk], binds: &[TokenStream2]) -> Vec<TokenStream2> {
+    let db = crate::krate::db_path();
     chunks
         .iter()
         .map(|c| match c {
@@ -675,7 +681,7 @@ fn chunk_statements(chunks: &[WhereChunk], binds: &[TokenStream2]) -> Vec<TokenS
             }
             WhereChunk::InList(i) => {
                 let b = &binds[*i];
-                quote!(::axumstart_db::push_in_list(&mut __qb, #b);)
+                quote!(#db::push_in_list(&mut __qb, #b);)
             }
         })
         .collect()
@@ -699,6 +705,7 @@ fn gen_filtered(
     kind: Kind,
     order_cols: Option<&[String]>,
 ) -> syn::Result<(TokenStream2, TokenStream2)> {
+    let db = crate::krate::db_path();
     if order_cols.is_some() && !matches!(kind, Kind::One) {
         return Err(syn::Error::new(
             sig.ident.span(),
@@ -738,7 +745,7 @@ fn gen_filtered(
                 });
                 quote! {
                     {
-                        let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(#sql_prefix);
+                        let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(#sql_prefix);
                         #(#stmts)*
                         #order_stmt
                         __qb.build_query_as().#fetch(#exec).await
@@ -765,7 +772,7 @@ fn gen_filtered(
             if wc.has_in {
                 quote! {
                     {
-                        let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(#sql_prefix);
+                        let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(#sql_prefix);
                         #(#stmts)*
                         __qb.push(#random_sql);
                         __qb.push(" LIMIT 1");
@@ -787,7 +794,7 @@ fn gen_filtered(
             if wc.has_in {
                 quote! {
                     {
-                        let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(#sql_prefix);
+                        let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(#sql_prefix);
                         #(#stmts)*
                         __qb.build_query_scalar().fetch_one(#exec).await
                     }
@@ -807,7 +814,7 @@ fn gen_filtered(
             if wc.has_in {
                 quote! {
                     {
-                        let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(#sql_prefix);
+                        let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(#sql_prefix);
                         #(#stmts)*
                         __qb.push(")");
                         __qb.build_query_scalar().fetch_one(#exec).await
@@ -834,7 +841,7 @@ fn gen_filtered(
             if wc.has_in {
                 quote! {
                     {
-                        let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(#sql_prefix);
+                        let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(#sql_prefix);
                         #(#stmts)*
                         __qb.build().execute(#exec).await.map(|_| ())
                     }
@@ -869,6 +876,7 @@ fn gen_select_all(
     date_col: Option<&str>,
     order_cols: Option<&[String]>,
 ) -> syn::Result<(TokenStream2, TokenStream2)> {
+    let db = crate::krate::db_path();
     let (after_order, order) = dsl::split_order(field_str);
     if order.is_some() && order_cols.is_some() {
         return Err(syn::Error::new(
@@ -912,7 +920,7 @@ fn gen_select_all(
         let stmts = chunk_statements(&wc.chunks, binds);
         let week_stmt = this_week.then(|| {
             let lit = format!(" AND {date_col_name} >= ");
-            quote!(__qb.push(#lit); __qb.push(::axumstart_db::WEEK_START_SQL);)
+            quote!(__qb.push(#lit); __qb.push(#db::WEEK_START_SQL);)
         });
         let order_stmt = order_sql.as_ref().map(|o| quote!(__qb.push(#o);));
         let page_stmt = sp.page.as_ref().map(|page| {
@@ -925,7 +933,7 @@ fn gen_select_all(
         });
         quote! {
             {
-                let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(#select_prefix);
+                let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(#select_prefix);
                 #(#stmts)*
                 #week_stmt
                 #order_stmt
@@ -944,7 +952,7 @@ fn gen_select_all(
             {
                 static __SQL: ::std::sync::OnceLock<::std::string::String> = ::std::sync::OnceLock::new();
                 let sql: &str = __SQL
-                    .get_or_init(|| ::std::format!(#sql_template, ::axumstart_db::WEEK_START_SQL))
+                    .get_or_init(|| ::std::format!(#sql_template, #db::WEEK_START_SQL))
                     .as_str();
                 ::sqlx::query_as(sql)
                     #(.bind(#binds))*
@@ -1075,6 +1083,7 @@ fn gen_set(
     rest: &str,
     exec: TokenStream2,
 ) -> syn::Result<(TokenStream2, TokenStream2)> {
+    let db = crate::krate::db_path();
     let by_pos = rest.find("_by_").ok_or_else(|| {
         syn::Error::new(
             sig.ident.span(),
@@ -1112,7 +1121,7 @@ fn gen_set(
         let set_prefix = format!("UPDATE \"{table}\" SET ");
         quote! {
             {
-                let mut __qb = ::sqlx::QueryBuilder::<::axumstart_db::Db>::new(#set_prefix);
+                let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(#set_prefix);
                 #(#set_stmts)*
                 __qb.push(" WHERE ");
                 #(#where_stmts)*

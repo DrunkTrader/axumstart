@@ -1,0 +1,11 @@
+[package]
+name = "axumstart-quickstart-example"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+axumstart = { path = "../..", features = ["components", "postgres"] }
+async-trait.workspace = true
+sqlx = { workspace = true, features = ["postgres"] }
+tokio = { workspace = true, features = ["macros", "rt"] }

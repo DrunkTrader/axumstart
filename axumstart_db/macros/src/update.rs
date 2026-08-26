@@ -83,6 +83,7 @@ fn returning_impl(
     key_str: &str,
     non_key_fields: &[&syn::Ident],
 ) -> syn::Result<TokenStream2> {
+    let db = crate::krate::db_path();
     let set_clause = non_key_fields
         .iter()
         .enumerate()
@@ -107,8 +108,8 @@ fn returning_impl(
                 executor: E,
             ) -> ::sqlx::Result<Row>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db>,
-                Row: for<'r> ::sqlx::FromRow<'r, <::axumstart_db::Db as ::sqlx::Database>::Row> + Send + Unpin,
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
+                Row: for<'r> ::sqlx::FromRow<'r, <#db::Db as ::sqlx::Database>::Row> + Send + Unpin,
             {
                 static __SQL_UPDATE: ::std::sync::OnceLock<::std::boxed::Box<str>> =
                     ::std::sync::OnceLock::new();
@@ -134,6 +135,7 @@ fn mysql_impl(
     key_str: &str,
     non_key_fields: &[&syn::Ident],
 ) -> syn::Result<TokenStream2> {
+    let db = crate::krate::db_path();
     let set_clause = non_key_fields
         .iter()
         .enumerate()
@@ -154,8 +156,8 @@ fn mysql_impl(
                 executor: E,
             ) -> ::sqlx::Result<Row>
             where
-                E: ::sqlx::Executor<'e, Database = ::axumstart_db::Db> + ::std::marker::Copy,
-                Row: for<'r> ::sqlx::FromRow<'r, <::axumstart_db::Db as ::sqlx::Database>::Row> + Send + Unpin,
+                E: ::sqlx::Executor<'e, Database = #db::Db> + ::std::marker::Copy,
+                Row: for<'r> ::sqlx::FromRow<'r, <#db::Db as ::sqlx::Database>::Row> + Send + Unpin,
             {
                 static __SQL_UPDATE: ::std::sync::OnceLock<::std::boxed::Box<str>> =
                     ::std::sync::OnceLock::new();

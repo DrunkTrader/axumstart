@@ -1,6 +1,6 @@
 [package]
 name = "axumstart_components_macros"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Proc macros for axumstart_components (Component, ComponentConfig, #[component])"
 license = "MIT"
@@ -13,3 +13,4 @@ proc-macro = true
 syn.workspace = true
 quote.workspace = true
 proc-macro2.workspace = true
+proc-macro-crate.workspace = true
