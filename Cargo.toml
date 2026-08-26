@@ -2,6 +2,15 @@
 name = "axumstart"
 version = "0.1.0"
 edition = "2024"
+description = "Batteries-included Axum starter: pick DI components and a SQL backend via Cargo features"
+license = "MIT"
+repository = "https://github.com/axumstart/axumstart"
+
+[features]
+components = ["dep:axumstart_components"]
+postgres = ["dep:axumstart_db", "axumstart_db/postgres"]
+mysql = ["dep:axumstart_db", "axumstart_db/mysql"]
+sqlite = ["dep:axumstart_db", "axumstart_db/sqlite"]
 
 [workspace]
 members = [
@@ -23,3 +32,5 @@ quote = "1"
 proc-macro2 = "1"
 
 [dependencies]
+axumstart_components = { path = "axumstart_components", version = "0.1.0", optional = true }
+axumstart_db = { path = "axumstart_db", version = "0.1.0", optional = true }

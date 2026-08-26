@@ -1,14 +1,16 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Batteries-included Axum starter. Pick the pieces you need via Cargo features:
+//!
+//! - `components` — re-exports [`axumstart_components`], an async dependency-injection
+//!   container with an `Inject<T>` Axum extractor.
+//! - `postgres` / `mysql` / `sqlite` — re-exports [`axumstart_db`] with the matching backend
+//!   enabled. Pick exactly one.
+//!
+//! ```toml
+//! axumstart = { version = "0.1", features = ["components", "postgres"] }
+//! ```
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg(feature = "components")]
+pub use axumstart_components;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+#[cfg(any(feature = "postgres", feature = "mysql", feature = "sqlite"))]
+pub use axumstart_db;

@@ -95,6 +95,10 @@ dependencies = [
 [[package]]
 name = "axumstart"
 version = "0.1.0"
+dependencies = [
+ "axumstart_components",
+ "axumstart_db",
+]
 
 [[package]]
 name = "axumstart_components"
