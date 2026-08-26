@@ -5,6 +5,7 @@ edition = "2024"
 description = "Batteries-included Axum starter: pick DI components and a SQL backend via Cargo features"
 license = "MIT"
 repository = "https://github.com/axumstart/axumstart"
+include = ["src/**", "LICENSE"]
 
 [features]
 components = ["dep:axumstart_components"]
