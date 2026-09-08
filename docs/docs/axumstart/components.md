@@ -1,8 +1,8 @@
 ---
-sidebar_position: 1
+sidebar_position: 2
 ---
 
-# axumstart_components
+# components
 
 An async dependency-injection container. Components are registered as *blueprints* (a recipe
 for constructing `T`), resolved lazily and cached on first use, and can be pulled out of Axum

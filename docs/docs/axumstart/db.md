@@ -1,8 +1,8 @@
 ---
-sidebar_position: 1
+sidebar_position: 3
 ---
 
-# axumstart_db
+# db
 
 Generates a repository implementation from a trait definition: annotate the trait, name your
 methods following a small set of conventions, and the SQL (Postgres, MySQL, or SQLite — one
@@ -15,7 +15,7 @@ compile-time choice because SQL placeholder syntax and `RETURNING` availability 
 generated queries at macro-expansion time — enabling zero or more than one is a compile error.
 
 ```toml
-axumstart_db = { path = "...", features = ["postgres"] }
+axumstart = { version = "...", features = ["postgres"] }
 ```
 
 This gives you `Db` (the `sqlx::Database` for the chosen backend), plus the aliases `DbPool =
@@ -24,23 +24,16 @@ sqlx::Pool<Db>` and `DbConnection = <Db as sqlx::Database>::Connection`.
 ## `#[repository(table = "...")]`
 
 Annotate a trait to generate:
-- the trait itself, wrapped with `#[async_trait]`,
 - a `Db{TraitName}` struct with a `pool: DbPool` field and `new(pool: DbPool) -> Self`,
 - `impl {TraitName} for Db{TraitName}`, with method bodies generated from method *names*.
 
 ```rust
 #[repository(table = "user_stats")]
-pub trait UserStatsRepository: Send + Sync {
+pub trait UserStatsRepository: Repository {
     async fn find_by_user_id(&self, user_id: i32) -> sqlx::Result<Option<UserStatsRow>>;
     async fn insert(&self, values: UserStatsValues) -> sqlx::Result<UserStatsRow>;
-    fn db(&self) -> &DbPool;
 }
-
-// Generated: DbUserStatsRepository { pool }  +  impl UserStatsRepository for DbUserStatsRepository
 ```
-
-A common pattern is a type alias for callers: `pub type UserStatsRepositoryImpl =
-DbUserStatsRepository;`.
 
 ### Method name conventions
 
@@ -78,7 +71,7 @@ Declare related tables so `find_by_*` method names can reference their columns:
 
 ```rust
 #[repository(table = "completed_challenge", join(challenge))]
-pub trait CompletedChallengeRepository: Send + Sync {
+pub trait CompletedChallengeRepository: Repository {
     // challenge_uuid → JOIN "challenge" ON "challenge".id = "completed_challenge".challenge_id
     //                   WHERE "challenge".uuid = $1 AND user_id = $2
     async fn find_by_challenge_uuid_and_user_id(
@@ -133,7 +126,7 @@ Add `mock` to the macro to generate `#[cfg_attr(test, ::mockall::automock)]` on 
 
 ```rust
 #[repository(table = "onboarding_test", mock)]
-pub trait OnboardingTestRepository: Send + Sync { /* ... */ }
+pub trait OnboardingTestRepository: Repository { /* ... */ }
 ```
 
 ### `_this_week` — cross-dialect caveat
