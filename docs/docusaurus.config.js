@@ -84,8 +84,8 @@ const config = {
             title: 'Docs',
             items: [
               {label: 'Introduction', to: '/'},
-              {label: 'axumstart_components', to: '/docs/components/'},
-              {label: 'axumstart_db', to: '/docs/db/'},
+              {label: 'axumstart_components', to: '/docs/axumstart/components'},
+              {label: 'axumstart_db', to: '/docs/axumstart/db'},
             ],
           },
           {

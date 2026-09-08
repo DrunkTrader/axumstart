@@ -7,14 +7,14 @@ import Heading from '@theme/Heading';
 const Libraries = [
   {
     title: 'axumstart_components',
-    to: '/docs/components/',
+    to: '/docs/axumstart/components',
     description:
       'An async dependency-injection container: derive macros for registering components, ' +
       'an OnCreate lifecycle hook, and an Inject<T> extractor for Axum handlers.',
   },
   {
     title: 'axumstart_db',
-    to: '/docs/db/',
+    to: '/docs/axumstart/db',
     description:
       'A #[repository] macro that turns trait method names like find_by_user_id or ' +
       'insert_all into sqlx queries against Postgres, MySQL, or SQLite.',
