@@ -7,5 +7,6 @@ publish = false
 [dependencies]
 axumstart = { path = "../..", features = ["components", "postgres"] }
 async-trait.workspace = true
-sqlx = { workspace = true, features = ["postgres"] }
+sqlx = { workspace = true, features = ["postgres", "derive"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
+dotenvy = "0.15"

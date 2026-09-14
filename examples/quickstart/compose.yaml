@@ -1,0 +1,29 @@
+# Real Postgres for testing this example against a live database:
+#
+#   docker compose up -d
+#   export DATABASE_URL=postgres://quickstart:quickstart@localhost:5432/quickstart
+#   sqlx migrate run
+#
+# `sqlx migrate run` (sqlx-cli: `cargo install sqlx-cli`) applies migrations/ — one file
+# per table (user, profile, order, post, tag, post_tag) — matching the repository traits
+# in src/lib.rs. This compose file only provisions the database itself.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quickstart
+      POSTGRES_PASSWORD: quickstart
+      POSTGRES_DB: quickstart
+    ports:
+      - "5432:5432"
+    volumes:
+      - quickstart-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quickstart -d quickstart"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+volumes:
+  quickstart-pgdata:
