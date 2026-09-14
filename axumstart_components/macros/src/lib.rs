@@ -64,7 +64,11 @@ fn component_struct(as_trait: Option<Path>, input: ItemStruct) -> TokenStream {
     Fields::Named(fields) => {
       let inits = fields.named.iter().map(|f| {
         let field_name = &f.ident;
-        let init = if has_default_attr(f) { quote! { Default::default() } } else { field_init(&f.ty) };
+        let init = if has_default_attr(f) {
+          quote! { Default::default() }
+        } else {
+          field_init(&f.ty)
+        };
         quote! { #field_name: #init }
       });
       quote! { Self { #(#inits),* } }
@@ -72,7 +76,11 @@ fn component_struct(as_trait: Option<Path>, input: ItemStruct) -> TokenStream {
     Fields::Unit => quote! { Self },
     Fields::Unnamed(fields) => {
       let inits = fields.unnamed.iter().map(|f| {
-        if has_default_attr(f) { quote! { Default::default() } } else { field_init(&f.ty) }
+        if has_default_attr(f) {
+          quote! { Default::default() }
+        } else {
+          field_init(&f.ty)
+        }
       });
       quote! { Self(#(#inits),*) }
     }
@@ -308,7 +316,12 @@ fn component_config_struct(input: ItemStruct) -> TokenStream {
 fn is_component_provider_ref(ty: &Type) -> bool {
   if let Type::Reference(r) = ty {
     if let Type::Path(p) = &*r.elem {
-      return p.path.segments.last().map(|s| s.ident == "ComponentProvider").unwrap_or(false);
+      return p
+        .path
+        .segments
+        .last()
+        .map(|s| s.ident == "ComponentProvider")
+        .unwrap_or(false);
     }
   }
   false
@@ -328,7 +341,11 @@ fn field_init(ty: &Type) -> proc_macro2::TokenStream {
 
 fn is_arc(ty: &Type) -> bool {
   if let Type::Path(tp) = ty {
-    tp.path.segments.last().map(|s| s.ident == "Arc").unwrap_or(false)
+    tp.path
+      .segments
+      .last()
+      .map(|s| s.ident == "Arc")
+      .unwrap_or(false)
   } else {
     false
   }

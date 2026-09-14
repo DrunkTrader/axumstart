@@ -3,8 +3,9 @@ use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::collections::{HashMap, HashSet};
 use syn::{
-    parse::Parse, parse::ParseStream, parse_macro_input, FnArg, GenericArgument, ItemTrait,
-    LitStr, PathArguments, ReturnType, Signature, Token, TraitItem, TraitItemFn, Type,
+    parse::Parse, parse::ParseStream, parse_macro_input, spanned::Spanned, FnArg,
+    GenericArgument, ItemTrait, LitStr, PathArguments, ReturnType, Signature, Token, TraitItem,
+    TraitItemFn, Type,
 };
 
 use crate::dialect;
@@ -14,7 +15,6 @@ struct TableAttr {
     table: String,
     mock: bool,
     component: bool,
-    joins: Vec<String>,
 }
 
 impl Parse for TableAttr {
@@ -27,7 +27,6 @@ impl Parse for TableAttr {
         let table = input.parse::<LitStr>()?.value();
         let mut mock = false;
         let mut component = false;
-        let mut joins: Vec<String> = Vec::new();
         while input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
             if input.is_empty() {
@@ -38,45 +37,35 @@ impl Parse for TableAttr {
                 mock = true;
             } else if flag == "component" {
                 component = true;
-            } else if flag == "join" {
-                let content;
-                syn::parenthesized!(content in input);
-                loop {
-                    let name: syn::Ident = content.parse()?;
-                    joins.push(name.to_string());
-                    if content.peek(Token![,]) {
-                        content.parse::<Token![,]>()?;
-                    } else {
-                        break;
-                    }
-                }
             } else {
                 return Err(syn::Error::new(
                     flag.span(),
-                    format!("unknown attribute `{flag}`; expected `mock`, `component`, or `join(...)`"),
+                    format!("unknown attribute `{flag}`; expected `mock` or `component`"),
                 ));
             }
         }
-        Ok(TableAttr { table, mock, component, joins })
+        Ok(TableAttr { table, mock, component })
     }
 }
 
 struct Ctx<'a> {
     table: &'a str,
-    joins: &'a [String],
+    relations: &'a [dsl::Relation],
 }
 
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let TableAttr { table, mock, component, joins } = parse_macro_input!(attr as TableAttr);
+    let TableAttr { table, mock, component } = parse_macro_input!(attr as TableAttr);
     let mut trait_def = parse_macro_input!(item as ItemTrait);
     let trait_name = trait_def.ident.clone();
     let vis = trait_def.vis.clone();
     let struct_name = format_ident!("Db{}", trait_name);
-    let ctx = Ctx { table: &table, joins: &joins };
+
+    let mut errors: Vec<TokenStream2> = Vec::new();
+    let relations = collect_relations(&mut trait_def, &table, &mut errors);
+    let ctx = Ctx { table: &table, relations: &relations };
     let db = crate::krate::db_path();
     let components = crate::krate::components_path();
 
-    let mut errors: Vec<TokenStream2> = Vec::new();
     let unique_map = collect_attr_map(&mut trait_def, "unique", &mut errors);
     let created_at_map = collect_attr_map(&mut trait_def, "created_at", &mut errors);
     let unchecked = collect_flag_attr(&mut trait_def, "unchecked_columns");
@@ -343,6 +332,126 @@ fn validate_attr_targets(
             );
         }
     }
+}
+
+// Scans the trait's own attribute list (not per-method) for #[belongs_to(...)],
+// #[has_one(...)], #[has_many(...)], #[belongs_to_many(...)], strips each match, and
+// returns the parsed relations. A trait may declare several relations of the same or
+// different kinds, so this loops until no more matches of a given attribute name remain.
+fn collect_relations(
+    trait_def: &mut ItemTrait,
+    this_table: &str,
+    errors: &mut Vec<TokenStream2>,
+) -> Vec<dsl::Relation> {
+    let mut relations = Vec::new();
+    let attr_kinds = [
+        ("belongs_to", dsl::RelationKind::BelongsTo),
+        ("has_one", dsl::RelationKind::HasOne),
+        ("has_many", dsl::RelationKind::HasMany),
+        ("belongs_to_many", dsl::RelationKind::BelongsToMany),
+    ];
+    for (attr_name, kind) in attr_kinds {
+        loop {
+            let Some(pos) = trait_def.attrs.iter().position(|a| a.path().is_ident(attr_name))
+            else {
+                break;
+            };
+            let attr = trait_def.attrs.remove(pos);
+            let span = attr.path().span();
+            let result = parse_relation_args(&attr)
+                .and_then(|args| build_relation(kind, this_table, attr_name, args, span));
+            match result {
+                Ok(rel) => relations.push(rel),
+                Err(e) => errors.push(e.to_compile_error()),
+            }
+        }
+    }
+    relations
+}
+
+fn parse_relation_args(attr: &syn::Attribute) -> syn::Result<Vec<(syn::Ident, LitStr)>> {
+    attr.parse_args_with(|input: ParseStream| {
+        let mut pairs = Vec::new();
+        loop {
+            if input.is_empty() {
+                break;
+            }
+            let key: syn::Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+            let val: LitStr = input.parse()?;
+            pairs.push((key, val));
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            } else {
+                break;
+            }
+        }
+        Ok(pairs)
+    })
+}
+
+fn build_relation(
+    kind: dsl::RelationKind,
+    this_table: &str,
+    attr_name: &str,
+    args: Vec<(syn::Ident, LitStr)>,
+    span: Span,
+) -> syn::Result<dsl::Relation> {
+    let mut table: Option<String> = None;
+    let mut fk_raw: Option<String> = None;
+    let mut other_fk_raw: Option<String> = None;
+    let mut through_raw: Option<String> = None;
+
+    for (key, val) in &args {
+        match key.to_string().as_str() {
+            "table" => table = Some(val.value()),
+            "fk" => fk_raw = Some(val.value()),
+            "other_fk" => other_fk_raw = Some(val.value()),
+            "through" => through_raw = Some(val.value()),
+            other => {
+                return Err(syn::Error::new(
+                    key.span(),
+                    format!("unknown key `{other}` in `#[{attr_name}(...)]`"),
+                ));
+            }
+        }
+    }
+
+    let table = table.ok_or_else(|| {
+        syn::Error::new(span, format!("`#[{attr_name}(...)]` requires `table = \"...\"`"))
+    })?;
+
+    let is_many = matches!(kind, dsl::RelationKind::BelongsToMany);
+    if is_many && through_raw.is_none() {
+        return Err(syn::Error::new(
+            span,
+            "`#[belongs_to_many(...)]` requires `through = \"...\"`",
+        ));
+    }
+    if !is_many {
+        if through_raw.is_some() {
+            return Err(syn::Error::new(
+                span,
+                format!("`through` is only valid on `belongs_to_many`, not `#[{attr_name}(...)]`"),
+            ));
+        }
+        if other_fk_raw.is_some() {
+            return Err(syn::Error::new(
+                span,
+                format!(
+                    "`other_fk` is only valid on `belongs_to_many`, not `#[{attr_name}(...)]`"
+                ),
+            ));
+        }
+    }
+
+    let fk = fk_raw.unwrap_or_else(|| match kind {
+        dsl::RelationKind::BelongsTo => format!("{table}_id"),
+        _ => format!("{this_table}_id"),
+    });
+    let other_fk = is_many.then(|| other_fk_raw.unwrap_or_else(|| format!("{table}_id")));
+
+    Ok(dsl::Relation { table, kind, fk, other_fk, through: through_raw })
 }
 
 fn process_transactional(
@@ -714,7 +823,14 @@ fn gen_filtered(
     }
     let conds = dsl::parse_conditions(field_str)
         .map_err(|e| syn::Error::new(sig.ident.span(), e))?;
-    let wc: WhereClause = dsl::build_where(&conds, ctx.joins, 0, 0, &dialect::placeholder);
+    let wc: WhereClause = dsl::build_where(&conds, ctx.relations, 0, 0, &dialect::placeholder);
+    if wc.fan_out {
+        return Err(syn::Error::new(
+            sig.ident.span(),
+            "this filter is reached through a has_many/belongs_to_many relation and may match \
+             multiple rows; only find_all_by_* may filter through it",
+        ));
+    }
     let sp = split_params(sig)?;
     no_page(sig, &sp)?;
     check_arity(sig, sp.binds.len(), wc.params)?;
@@ -723,7 +839,7 @@ fn gen_filtered(
     let join_sql = if wc.joins_needed.is_empty() {
         String::new()
     } else {
-        format!(" {}", dsl::join_clauses(table, &wc.joins_needed))
+        format!(" {}", dsl::join_clauses(table, &wc.joins_needed, ctx.relations))
     };
     let qualified = if wc.joins_needed.is_empty() { "*".to_string() } else { format!("\"{table}\".*") };
     let mut probe_cols = wc.probe_cols.clone();
@@ -887,7 +1003,7 @@ fn gen_select_all(
     let (filter_str, this_week) = dsl::split_this_week(after_order);
     let conds = dsl::parse_conditions(filter_str)
         .map_err(|e| syn::Error::new(sig.ident.span(), e))?;
-    let wc: WhereClause = dsl::build_where(&conds, ctx.joins, 0, 0, &dialect::placeholder);
+    let wc: WhereClause = dsl::build_where(&conds, ctx.relations, 0, 0, &dialect::placeholder);
     let sp = split_params(sig)?;
     check_arity(sig, sp.binds.len(), wc.params)?;
 
@@ -901,7 +1017,10 @@ fn gen_select_all(
     let select_prefix = if wc.joins_needed.is_empty() {
         format!("SELECT * FROM \"{table}\" WHERE ")
     } else {
-        format!("SELECT \"{table}\".* FROM \"{table}\" {} WHERE ", dsl::join_clauses(table, &wc.joins_needed))
+        format!(
+            "SELECT \"{table}\".* FROM \"{table}\" {} WHERE ",
+            dsl::join_clauses(table, &wc.joins_needed, ctx.relations)
+        )
     };
 
     let order_sql: Option<String> = if let Some((order_sql, order_col)) = &order {
@@ -1098,8 +1217,20 @@ fn gen_set(
     let set_cols: Vec<&str> = field.split("_and_").collect();
     let filter_conds = dsl::parse_conditions(filter_str)
         .map_err(|e| syn::Error::new(sig.ident.span(), e))?;
-    let wc: WhereClause =
-        dsl::build_where(&filter_conds, ctx.joins, set_cols.len(), set_cols.len(), &dialect::placeholder);
+    let wc: WhereClause = dsl::build_where(
+        &filter_conds,
+        ctx.relations,
+        set_cols.len(),
+        set_cols.len(),
+        &dialect::placeholder,
+    );
+    if wc.fan_out {
+        return Err(syn::Error::new(
+            sig.ident.span(),
+            "this filter is reached through a has_many/belongs_to_many relation and may match \
+             multiple rows; only find_all_by_* may filter through it",
+        ));
+    }
     check_arity(sig, sp.binds.len(), set_cols.len() + wc.params)?;
 
     let binds = &sp.binds;

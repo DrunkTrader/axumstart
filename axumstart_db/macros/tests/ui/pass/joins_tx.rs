@@ -8,7 +8,8 @@ struct OrderRow {
     total: i64,
 }
 
-#[repository(table = "order", join(user))]
+#[repository(table = "order")]
+#[belongs_to(table = "user")]
 trait OrderRepository: Send + Sync {
     // joined column — resolves through JOIN "user"
     async fn find_all_by_user_email(&self, email: String) -> sqlx::Result<Vec<OrderRow>>;

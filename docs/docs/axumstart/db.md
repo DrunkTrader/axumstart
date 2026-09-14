@@ -65,24 +65,111 @@ Methods with a **default body** are emitted as-is (no codegen applied). **Unknow
 names** compile to `todo!("no codegen rule for `name`")` — a runtime panic, not a compile
 error, so double-check new method names against this table.
 
-### `join(table_name)` — cross-table field resolution
+### Relations — `belongs_to` / `has_one` / `has_many` / `belongs_to_many`
 
-Declare related tables so `find_by_*` method names can reference their columns:
+Declare related tables so method names can reference their columns. Stack one relation
+attribute per relation **below** `#[repository(...)]` — order matters, see
+[Attribute ordering](#attribute-ordering) below. A trait may declare several relations, of the
+same or different kinds, as long as each targets a distinct table (a relation's `table` value
+doubles as the DSL prefix matched in method names, e.g. `{table}_{col}` — so two relations
+pointing at the same target table would collide and aren't supported).
+
+| Attribute | Params | Defaults | JOIN emitted | FK shortcut (`{table}_id`, no JOIN)? |
+|---|---|---|---|---|
+| `belongs_to(table, fk?)` | `fk` = FK column on **this** (owning) table | `fk = "{table}_id"` | `JOIN "{table}" ON "{table}".id = "{this_table}".{fk}` | **Yes** — `{table}_id` resolves straight to the `fk` column on this table, no JOIN |
+| `has_one(table, fk?)` | `fk` = FK column on the **target** table, pointing back here | `fk = "{this_table}_id"` | `JOIN "{table}" ON "{table}".{fk} = "{this_table}".id` | No |
+| `has_many(table, fk?)` | same shape as `has_one` | same as `has_one` | same as `has_one` | No |
+| `belongs_to_many(table, through, fk?, other_fk?)` | `through` (**required**) = pivot table name; `fk` = this table's FK column in the pivot; `other_fk` = target table's FK column in the pivot | `fk = "{this_table}_id"`, `other_fk = "{table}_id"` | `JOIN "{through}" ON "{through}".{fk} = "{this_table}".id JOIN "{table}" ON "{table}".id = "{through}".{other_fk}` | No |
+
+`{this_table}` is the `table = "..."` value passed to `#[repository(...)]` itself. There's no
+separate relation-name/alias parameter — the `table` value is simultaneously the real SQL table
+name and the DSL prefix matched in method names.
+
+#### `belongs_to` — many-to-one (FK lives on this table)
 
 ```rust
-#[repository(table = "completed_challenge", join(challenge))]
+#[repository(table = "completed_challenge")]
+#[belongs_to(table = "challenge")]
 pub trait CompletedChallengeRepository: Repository {
     // challenge_uuid → JOIN "challenge" ON "challenge".id = "completed_challenge".challenge_id
     //                   WHERE "challenge".uuid = $1 AND user_id = $2
     async fn find_by_challenge_uuid_and_user_id(
         &self, challenge_uuid: Uuid, user_id: i32,
     ) -> sqlx::Result<Option<CompletedChallengeRow>>;
+    // FK shortcut, no JOIN — challenge_id is the belongs_to FK column itself
+    async fn find_by_challenge_id(&self, challenge_id: i32) -> sqlx::Result<Option<CompletedChallengeRow>>;
 }
 ```
 
-Convention: a `{join}_id` foreign key must exist on the main table. Multiple joins:
-`join(challenge, user)`. Field resolution is `{join_name}_{col}` → `"{join_name}".{col}` (with
-the `JOIN` added); every other field stays unqualified against the main table.
+#### `has_one` — one-to-one (FK lives on the target table)
+
+```rust
+#[repository(table = "user")]
+#[has_one(table = "profile")]
+pub trait UserRepository: Repository {
+    // profile_bio → JOIN "profile" ON "profile".user_id = "user".id WHERE "profile".bio = $1
+    async fn find_by_profile_bio(&self, bio: String) -> sqlx::Result<Option<UserRow>>;
+}
+```
+
+#### `has_many` — one-to-many (FK lives on the target table)
+
+```rust
+#[repository(table = "user")]
+#[has_many(table = "order")]
+pub trait UserRepository: Repository {
+    // order_status → JOIN "order" ON "order".user_id = "user".id WHERE "order".status = $1
+    // only legal on find_all_by_* — see "Fan-out" below
+    async fn find_all_by_order_status(&self, status: String) -> sqlx::Result<Vec<UserRow>>;
+}
+```
+
+#### `belongs_to_many` — many-to-many through a pivot table
+
+```rust
+#[repository(table = "post")]
+#[belongs_to_many(table = "tag", through = "post_tag")]
+pub trait PostRepository: Repository {
+    // tag_name → JOIN "post_tag" ON "post_tag".post_id = "post".id
+    //            JOIN "tag" ON "tag".id = "post_tag".tag_id
+    //            WHERE "tag".name = $1
+    // only legal on find_all_by_* — see "Fan-out" below
+    async fn find_all_by_tag_name(&self, name: String) -> sqlx::Result<Vec<PostRow>>;
+}
+```
+
+#### Fan-out: `has_many`/`belongs_to_many` columns are `find_all_by_*`-only
+
+`has_many` and `belongs_to_many` can each match *multiple* rows on the far side of the join —
+unlike `belongs_to`/`has_one`, which are always many-to-one or one-to-one and can never multiply
+rows. Concretely, filtering `user` by a `has_many` `order` column would generate:
+
+```sql
+SELECT "user".* FROM "user" JOIN "order" ON "order".user_id = "user".id WHERE "order".status = $1
+```
+
+If a user has 3 orders with that status, this returns **the same user row 3 times** — silently
+wrong for a `find_by_*`/`fetch_optional`/`fetch_one` call site (expects at most one row), and
+merely surprising for a `Vec` call site. To avoid this, referencing a `has_many`/`belongs_to_many`
+column from anything other than `find_all_by_*` (`find_by_*`, `find_random_by_*`, `count_by_*`,
+`exists_by_*`, `delete_by_*`, `set_*_by_*`) is a **compile error**, not a runtime surprise.
+
+#### Attribute ordering
+
+`#[repository(...)]` must be the **first/outermost** attribute, with relation attributes listed
+after it:
+
+```rust
+#[repository(table = "order")] // must come first
+#[belongs_to(table = "user")]  // relation attributes come after
+pub trait OrderRepository: Repository { /* ... */ }
+```
+
+This is because `has_many`/`has_one`/`belongs_to`/`belongs_to_many` aren't independently
+registered proc-macro attributes — they're inert tokens that `#[repository(...)]` receives as
+part of the trait's attribute list and strips out before re-emitting the trait. If a relation
+attribute is listed *before* `#[repository(...)]`, rustc tries to resolve it on its own and fails
+with "cannot find attribute `has_many` in this scope".
 
 ### `_in` — works the same on every backend
 

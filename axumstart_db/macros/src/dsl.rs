@@ -143,6 +143,37 @@ pub struct WhereClause {
     /// Number of bind parameters the WHERE clause consumes (one per `In` too — it still
     /// binds a single `Vec<T>` method parameter).
     pub params: usize,
+    /// True if any resolved column came from a `HasMany`/`BelongsToMany` relation — such a
+    /// relation can match multiple rows per base-table row, so callers must reject this
+    /// outside `find_all_by_*`.
+    pub fan_out: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelationKind {
+    BelongsTo,
+    HasOne,
+    HasMany,
+    BelongsToMany,
+}
+
+impl RelationKind {
+    /// A `has_many`/`belongs_to_many` join can match multiple rows on the far side.
+    pub fn fans_out(self) -> bool {
+        matches!(self, RelationKind::HasMany | RelationKind::BelongsToMany)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Relation {
+    /// Target table name AND the DSL prefix matched in method names.
+    pub table: String,
+    pub kind: RelationKind,
+    pub fk: String,
+    /// `BelongsToMany` only.
+    pub other_fk: Option<String>,
+    /// `BelongsToMany` only.
+    pub through: Option<String>,
 }
 
 /// `sql_offset` shifts placeholder indices (UPDATE puts SET params first) in the fast-path
@@ -151,7 +182,7 @@ pub struct WhereClause {
 /// filter-side binds, not the SET-side ones), so it usually stays 0.
 pub fn build_where(
     conds: &[Condition],
-    joins: &[String],
+    relations: &[Relation],
     sql_offset: usize,
     bind_offset: usize,
     placeholder: &dyn Fn(usize) -> String,
@@ -161,11 +192,13 @@ pub fn build_where(
     let mut sql_parts: Vec<String> = Vec::new();
     let mut chunks: Vec<WhereChunk> = Vec::new();
     let mut has_in = false;
+    let mut fan_out = false;
     let mut idx = sql_offset;
     let mut bind_idx = bind_offset;
 
     for c in conds {
-        let target = resolve_target(&c.column, joins, &mut joins_needed, &mut probe_cols);
+        let target =
+            resolve_target(&c.column, relations, &mut joins_needed, &mut probe_cols, &mut fan_out);
         let prefix = c.op.prefix(&target);
 
         if c.op.is_list() {
@@ -200,36 +233,60 @@ pub fn build_where(
         joins_needed,
         probe_cols,
         params: idx - sql_offset,
+        fan_out,
     }
 }
 
 fn resolve_target(
     column: &str,
-    joins: &[String],
+    relations: &[Relation],
     joins_needed: &mut Vec<String>,
     probe_cols: &mut Vec<String>,
+    fan_out: &mut bool,
 ) -> String {
-    for j in joins {
-        let prefix = format!("{j}_");
+    for r in relations {
+        let prefix = format!("{}_", r.table);
         if let Some(col) = column.strip_prefix(prefix.as_str()) {
-            // "{join}_id" is the FK column itself — query it directly, no JOIN needed
-            if col == "id" {
-                break;
+            // `belongs_to`'s "{table}_id" is the FK column itself — query it directly, no
+            // JOIN needed. Other kinds have no such shortcut: there's no FK on this table to
+            // resolve to, so even the "id" column must go through the JOIN.
+            if r.kind == RelationKind::BelongsTo && col == "id" {
+                probe_cols.push(r.fk.clone());
+                return r.fk.clone();
             }
-            if !joins_needed.contains(j) {
-                joins_needed.push(j.clone());
+            if !joins_needed.contains(&r.table) {
+                joins_needed.push(r.table.clone());
             }
-            return format!("\"{j}\".{col}");
+            if r.kind.fans_out() {
+                *fan_out = true;
+            }
+            return format!("\"{}\".{col}", r.table);
         }
     }
     probe_cols.push(column.to_string());
     column.to_string()
 }
 
-pub fn join_clauses(table: &str, needed: &[String]) -> String {
+pub fn join_clauses(table: &str, needed: &[String], relations: &[Relation]) -> String {
     needed
         .iter()
-        .map(|j| format!("JOIN \"{j}\" ON \"{j}\".id = \"{table}\".{j}_id"))
+        .filter_map(|name| relations.iter().find(|r| &r.table == name))
+        .map(|r| match r.kind {
+            RelationKind::BelongsTo => {
+                format!("JOIN \"{0}\" ON \"{0}\".id = \"{table}\".{1}", r.table, r.fk)
+            }
+            RelationKind::HasOne | RelationKind::HasMany => {
+                format!("JOIN \"{0}\" ON \"{0}\".{1} = \"{table}\".id", r.table, r.fk)
+            }
+            RelationKind::BelongsToMany => {
+                let through = r.through.as_deref().unwrap_or_default();
+                let other_fk = r.other_fk.as_deref().unwrap_or_default();
+                format!(
+                    "JOIN \"{through}\" ON \"{through}\".{} = \"{table}\".id JOIN \"{}\" ON \"{}\".id = \"{through}\".{other_fk}",
+                    r.fk, r.table, r.table
+                )
+            }
+        })
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -346,15 +403,95 @@ mod tests {
         assert_eq!(wc.params, 1);
     }
 
+    fn belongs_to(table: &str) -> Relation {
+        Relation {
+            table: table.to_string(),
+            kind: RelationKind::BelongsTo,
+            fk: format!("{table}_id"),
+            other_fk: None,
+            through: None,
+        }
+    }
+
+    fn has_many(table: &str, this_table: &str) -> Relation {
+        Relation {
+            table: table.to_string(),
+            kind: RelationKind::HasMany,
+            fk: format!("{this_table}_id"),
+            other_fk: None,
+            through: None,
+        }
+    }
+
     #[test]
     fn join_resolution() {
-        let joins = vec!["user".to_string()];
+        let relations = vec![belongs_to("user")];
         let conds = parse_conditions("user_email_and_user_id").unwrap();
-        let wc = build_where(&conds, &joins, 0, 0, &pg_placeholder);
+        let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
         assert_eq!(wc.sql, "\"user\".email = $1 AND user_id = $2");
         assert_eq!(wc.joins_needed, vec!["user"]);
         // joined column not probed; FK shortcut column is
         assert_eq!(wc.probe_cols, vec!["user_id"]);
+        assert!(!wc.fan_out);
+    }
+
+    #[test]
+    fn has_one_and_has_many_always_join() {
+        // Unlike belongs_to, has_one/has_many have no FK shortcut — even the "id" column
+        // must be resolved through the JOIN, since there's no FK on this table to fall
+        // back to.
+        let relations = vec![
+            Relation {
+                table: "profile".to_string(),
+                kind: RelationKind::HasOne,
+                fk: "user_id".to_string(),
+                other_fk: None,
+                through: None,
+            },
+            has_many("order", "user"),
+        ];
+        let conds = parse_conditions("profile_id_and_order_status").unwrap();
+        let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
+        assert_eq!(wc.sql, "\"profile\".id = $1 AND \"order\".status = $2");
+        assert_eq!(wc.joins_needed, vec!["profile", "order"]);
+        assert!(wc.probe_cols.is_empty());
+        assert!(wc.fan_out);
+    }
+
+    #[test]
+    fn belongs_to_many_renders_both_joins() {
+        let relations = vec![Relation {
+            table: "tag".to_string(),
+            kind: RelationKind::BelongsToMany,
+            fk: "post_id".to_string(),
+            other_fk: Some("tag_id".to_string()),
+            through: Some("post_tag".to_string()),
+        }];
+        let conds = parse_conditions("tag_name").unwrap();
+        let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
+        assert_eq!(wc.sql, "\"tag\".name = $1");
+        assert!(wc.fan_out);
+        assert_eq!(
+            join_clauses("post", &wc.joins_needed, &relations),
+            "JOIN \"post_tag\" ON \"post_tag\".post_id = \"post\".id JOIN \"tag\" ON \"tag\".id = \"post_tag\".tag_id"
+        );
+    }
+
+    #[test]
+    fn fan_out_false_for_belongs_to_and_has_one() {
+        let relations = vec![
+            belongs_to("user"),
+            Relation {
+                table: "profile".to_string(),
+                kind: RelationKind::HasOne,
+                fk: "user_id".to_string(),
+                other_fk: None,
+                through: None,
+            },
+        ];
+        let conds = parse_conditions("user_email_and_profile_bio").unwrap();
+        let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
+        assert!(!wc.fan_out);
     }
 
     #[test]
