@@ -1,6 +1,6 @@
 [package]
 name = "axumstart_db"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "A #[repository] macro that generates sqlx-backed repository implementations from trait method names, for Postgres, MySQL, or SQLite"
 license = "MIT"
@@ -12,5 +12,5 @@ mysql = ["axumstart_db_macros/mysql", "sqlx/mysql"]
 sqlite = ["axumstart_db_macros/sqlite", "sqlx/sqlite"]
 
 [dependencies]
-axumstart_db_macros = { path = "macros", version = "0.1.1" }
+axumstart_db_macros = { path = "macros", version = "0.1.2" }
 sqlx.workspace = true
