@@ -1,6 +1,6 @@
 [package]
 name = "axumstart_components"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "Async dependency injection for Axum services: a typed component container, derive macros for registration, and an Inject<T> extractor"
 license = "MIT"
@@ -8,7 +8,7 @@ repository = "https://github.com/axumstart/axumstart"
 
 [dependencies]
 parking_lot.workspace = true
-axumstart_components_macros = { path = "macros", version = "0.1.3" }
+axumstart_components_macros = { path = "macros", version = "0.1.4" }
 axum.workspace = true
 async-trait.workspace = true
 tokio = { workspace = true, features = ["sync"] }
