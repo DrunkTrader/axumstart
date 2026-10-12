@@ -1,0 +1,13 @@
+[package]
+name = "axumstart_router"
+version = "0.1.4"
+edition = "2024"
+description = "Auto-registered Axum routes (#[get]/#[post]/.../#[layer]) backed by axumstart_components' DI container"
+license = "MIT"
+repository = "https://github.com/axumstart/axumstart"
+
+[dependencies]
+axumstart_router_macros = { path = "macros", version = "0.1.4" }
+axumstart_components = { path = "../axumstart_components", version = "0.1.4" }
+axum.workspace = true
+inventory.workspace = true

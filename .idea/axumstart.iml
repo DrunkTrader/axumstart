@@ -12,6 +12,9 @@
       <sourceFolder url="file://$MODULE_DIR$/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/examples/quickstart/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/axumstart_router/macros/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/axumstart_router/macros/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/axumstart_router/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

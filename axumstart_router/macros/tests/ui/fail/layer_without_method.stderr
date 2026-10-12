@@ -1,0 +1,5 @@
+error: #[layer(...)] requires exactly one #[get]/#[post]/#[put]/#[delete]/#[patch]/#[head]/#[options]/#[trace]/#[connect] attribute on the same function
+ --> tests/ui/fail/layer_without_method.rs:9:1
+  |
+9 | async fn orphan_layer() -> &'static str {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

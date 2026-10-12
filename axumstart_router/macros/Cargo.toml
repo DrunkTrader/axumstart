@@ -1,0 +1,22 @@
+[package]
+name = "axumstart_router_macros"
+version = "0.1.4"
+edition = "2024"
+description = "Proc macros powering axumstart_router's #[get]/#[post]/.../#[layer]"
+license = "MIT"
+repository = "https://github.com/axumstart/axumstart"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+proc-macro-crate.workspace = true
+
+[dev-dependencies]
+trybuild = { version = "1", features = ["diff"] }
+axum.workspace = true
+tower = "0.5"
+axumstart_router = { path = ".." }

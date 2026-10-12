@@ -1,6 +1,6 @@
 [package]
 name = "axumstart"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "Batteries-included Axum starter: pick DI components and a SQL backend via Cargo features"
 license = "MIT"
@@ -8,7 +8,9 @@ repository = "https://github.com/axumstart/axumstart"
 include = ["src/**", "/LICENSE"]
 
 [features]
+default = ["components", "router"]
 components = ["dep:axumstart_components"]
+router = ["components", "dep:axumstart_router"]
 postgres = ["dep:axumstart_db", "axumstart_db/postgres"]
 mysql = ["dep:axumstart_db", "axumstart_db/mysql"]
 sqlite = ["dep:axumstart_db", "axumstart_db/sqlite"]
@@ -19,6 +21,8 @@ members = [
     "axumstart_components/macros",
     "axumstart_db",
     "axumstart_db/macros",
+    "axumstart_router",
+    "axumstart_router/macros",
     "examples/quickstart",
 ]
 
@@ -35,5 +39,9 @@ proc-macro2 = "1"
 proc-macro-crate = "3"
 
 [dependencies]
-axumstart_components = { path = "axumstart_components", version = "0.1.3", optional = true }
-axumstart_db = { path = "axumstart_db", version = "0.1.3", optional = true }
+tokio.workspace = true
+axum.workspace = true
+dotenvy = "0.15"
+axumstart_components = { path = "axumstart_components", version = "0.1.4", optional = true }
+axumstart_db = { path = "axumstart_db", version = "0.1.4", optional = true }
+axumstart_router = { path = "axumstart_router", version = "0.1.4", optional = true }
