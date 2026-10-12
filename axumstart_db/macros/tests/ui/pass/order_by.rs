@@ -16,7 +16,7 @@ trait AchievementRepository: Send + Sync {
     async fn find_all_by_active_ordered(&self, active: bool) -> sqlx::Result<Vec<AchievementRow>>;
 
     #[order_by("sort_order")]
-    async fn find_by_id_ordered(&self, id: i32) -> sqlx::Result<Option<AchievementRow>>;
+    async fn first_by_id_ordered(&self, id: i32) -> sqlx::Result<Option<AchievementRow>>;
 }
 
 fn _assert_impl<T: AchievementRepository>() {}

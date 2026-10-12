@@ -34,8 +34,4 @@ values struct.
 
 ## Constraints
 
-- No `Page` parameter (not meaningful on an `UPDATE`).
-- The filter can't reach a `has_many`/`belongs_to_many` relation (same restriction as
-  [find_by](./find_by.md#relations) — this always affects potentially many base-table rows
-  already via the filter, not via the relation).
 - `_in` in the filter works as usual, switching that clause to the `QueryBuilder` path.

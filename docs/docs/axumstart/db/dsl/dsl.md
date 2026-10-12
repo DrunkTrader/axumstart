@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# dsl
+# Dsl
 
 `#[repository(table = "...")]` generates a method's body purely from its **name** — there's no
 attribute per method, no query-builder calls to write. Each page below documents one method-name
@@ -11,7 +11,7 @@ modifiers that apply across several.
 
 | Pattern | Returns | Page |
 |---|---|---|
-| `find_by_{filter}` | one row | [find_by](./find_by.md) |
+| `first_by_{filter}` | one row | [first_by](./first_by.md) |
 | `find_random_by_{filter}` | one random row | [find_random_by](./find_random_by.md) |
 | `find_all_by_{filter}`, `find_all`, `find_all_order_by_{col}`, `find_all_{bool_field}` | rows | [find_all](./find_all.md) |
 | `count_by_{filter}` | `i64` | [count_by](./count_by.md) |
@@ -31,7 +31,7 @@ joined table's columns — see [relations](../relations/relations.md).
 
 ## Shared filter grammar
 
-`find_by_*`, `find_random_by_*`, `find_all_by_*`, `count_by_*`, `exists_by_*`, `delete_by_*`, and
+`first_by_*`, `find_random_by_*`, `find_all_by_*`, `count_by_*`, `exists_by_*`, `delete_by_*`, and
 the filter half of `set_*_by_*` all parse `{filter}` the same way.
 
 ### Operators
@@ -59,7 +59,7 @@ condition.
 
 ### Connectors — `_and_` / `_or_`
 
-Chain fields with `_and_` / `_or_`: `find_by_username_or_email`, `find_by_user_id_and_deleted_at_is_null`.
+Chain fields with `_and_` / `_or_`: `first_by_username_or_email`, `first_by_user_id_and_deleted_at_is_null`.
 
 **There's no grouping.** The name is parsed left to right into a flat sequence of conditions —
 whichever of `_and_`/`_or_` occurs first in the string wins that split — and the resulting SQL has
@@ -72,7 +72,7 @@ no parentheses, so it inherits SQL's normal `AND`-binds-tighter-than-`OR` preced
 Two things are checked at macro-expansion time, before any SQL ever runs:
 
 - **Arity** — the number of non-`Page` parameters must match the number of bound placeholders the
-  name implies. `find_by_username_or_email(&self)` (missing both params) is a compile error, not a
+  name implies. `first_by_username_or_email(&self)` (missing both params) is a compile error, not a
   runtime one.
 - **Column probing** — every column name the DSL parses out of the method name is checked against
   the return type's row struct (`r.column` must compile), catching typos immediately instead of
@@ -84,7 +84,7 @@ a field with an unrelated name via `#[sqlx(rename = "...")]`):
 
 ```rust
 #[unchecked_columns]
-async fn find_by_legacy_uid(&self, uid: String) -> sqlx::Result<UserRow>;
+async fn first_by_legacy_uid(&self, uid: String) -> sqlx::Result<UserRow>;
 ```
 
 ## `#[order_by("col1", "col2")]`
@@ -95,11 +95,11 @@ method name must end in `_ordered` (stripped before the rest of the name is pars
 
 ```rust
 #[order_by("elo", "created_at")]
-async fn find_by_team_id_ordered(&self, team_id: i32) -> sqlx::Result<Option<UserRow>>;
-// SELECT * FROM "user" WHERE team_id = $1 ORDER BY elo, created_at
+async fn first_by_team_id_ordered(&self, team_id: i32) -> sqlx::Result<Option<UserRow>>;
+// SELECT * FROM "user" WHERE team_id = $1 ORDER BY elo, created_at LIMIT 1
 ```
 
-Supported on `find_by_*`, `find_all_by_*`, bare `find_all`, and `find_all_{bool_field}` only —
+Supported on `first_by_*`, `find_all_by_*`, bare `find_all`, and `find_all_{bool_field}` only —
 not `find_random_by_*`, `count_by_*`, `exists_by_*`, `delete_by_*`, `set_*_by_*`, or any of the
 insert/upsert/update methods (compile error otherwise). Can't be combined with an embedded
 `_order_by_` suffix on the same method.

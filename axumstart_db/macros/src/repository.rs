@@ -538,7 +538,7 @@ fn no_order_by(sig: &Signature, order_cols: Option<&[String]>, name: &str) -> sy
         return Err(syn::Error::new(
             sig.ident.span(),
             format!(
-                "`#[order_by(...)]` has no effect on `{name}`; only supported on find_by_*, \
+                "`#[order_by(...)]` has no effect on `{name}`; only supported on first_by_*, \
                  find_all_by_*, find_all, and bare boolean find_all_<field> methods"
             ),
         ));
@@ -565,7 +565,7 @@ fn gen_body(
         gen_select_all(sig, ctx, f, exec, date_col, order_cols)
     } else if let Some(f) = dispatch_name.strip_prefix("find_random_by_") {
         gen_filtered(sig, ctx, f, exec, Kind::Random, order_cols)
-    } else if let Some(f) = dispatch_name.strip_prefix("find_by_") {
+    } else if let Some(f) = dispatch_name.strip_prefix("first_by_") {
         gen_filtered(sig, ctx, f, exec, Kind::One, order_cols)
     } else if let Some(f) = dispatch_name.strip_prefix("count_by_") {
         gen_filtered(sig, ctx, f, exec, Kind::Count, order_cols)
@@ -613,7 +613,7 @@ fn gen_body(
         Err(syn::Error::new(
             sig.ident.span(),
             format!(
-                "no codegen rule for `{name}`; expected one of: find_by_*, find_all, \
+                "no codegen rule for `{name}`; expected one of: first_by_*, find_all, \
                  find_all_by_*, find_all_order_by_*, find_random_by_*, find_all_<bool_field>, \
                  count_by_*, exists_by_*, delete_by_*, set_*_by_*, insert, insert_all, \
                  insert_or_ignore, upsert, upsert_all, update, pool — or provide a method body"
@@ -719,7 +719,7 @@ fn fetch_method(ret: &ReturnType) -> TokenStream2 {
     quote!(fetch_one)
 }
 
-/// True for `sqlx::Result<Vec<_>>` — used to reject `Vec` returns on `find_by_*`/
+/// True for `sqlx::Result<Vec<_>>` — used to reject `Vec` returns on `first_by_*`/
 /// `find_random_by_*`, which fetch at most one row.
 fn returns_vec(ret: &ReturnType) -> bool {
     matches!(result_ok_type(ret), Some(ok) if generic_arg(&ok, "Vec").is_some())
@@ -830,13 +830,13 @@ fn gen_filtered(
     if order_cols.is_some() && !matches!(kind, Kind::One) {
         return Err(syn::Error::new(
             sig.ident.span(),
-            "`#[order_by(...)]` is only supported on `find_by_*` (not find_random_by_/count_by_/exists_by_/delete_by_)",
+            "`#[order_by(...)]` is only supported on `first_by_*` (not find_random_by_/count_by_/exists_by_/delete_by_)",
         ));
     }
     if matches!(kind, Kind::One | Kind::Random) && returns_vec(&sig.output) {
         return Err(syn::Error::new(
             sig.ident.span(),
-            "`find_by_*`/`find_random_by_*` return at most one row — return `Option<T>` or `T`, \
+            "`first_by_*`/`find_random_by_*` return at most one row — return `Option<T>` or `T`, \
              not `Vec<T>`; use `find_all_by_*` for a list",
         ));
     }
@@ -883,6 +883,7 @@ fn gen_filtered(
                         let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(#sql_prefix);
                         #(#stmts)*
                         #order_stmt
+                        __qb.push(" LIMIT 1");
                         __qb.build_query_as().#fetch(#exec).await
                     }
                 }
@@ -892,6 +893,7 @@ fn gen_filtered(
                     sql.push_str(" ORDER BY ");
                     sql.push_str(&cols.join(", "));
                 }
+                sql.push_str(" LIMIT 1");
                 quote! {
                     ::sqlx::query_as(#sql)
                         #(.bind(#binds))*

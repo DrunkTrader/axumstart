@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# relations
+# Relations
 
 Declare related tables so method names in a [`#[repository]`](../db.md) trait can reference their
 columns. Stack one relation attribute per relation **below** `#[repository(...)]` — order matters,
@@ -33,9 +33,9 @@ SELECT "user".* FROM "user" JOIN "order" ON "order".user_id = "user".id WHERE "o
 ```
 
 If a user has 3 orders with that status, this returns **the same user row 3 times** — silently
-wrong for a `find_by_*`/`fetch_optional`/`fetch_one` call site (expects at most one row), and
+wrong for a `first_by_*`/`fetch_optional`/`fetch_one` call site (expects at most one row), and
 merely surprising for a `Vec` call site. To avoid this, referencing a `has_many`/`belongs_to_many`
-column from anything other than [find_all](../dsl/find_all.md) (`find_by_*`, `find_random_by_*`,
+column from anything other than [find_all](../dsl/find_all.md) (`first_by_*`, `find_random_by_*`,
 `count_by_*`, `exists_by_*`, `delete_by_*`, `set_*_by_*`) is a **compile error**, not a runtime
 surprise.
 

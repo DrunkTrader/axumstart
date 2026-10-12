@@ -7,13 +7,13 @@ Many-to-one — the foreign key lives on **this** (owning) table, pointing at th
 #[belongs_to(table = "challenge")]
 pub trait CompletedChallengeRepository: Repository {
     // challenge_uuid → JOIN "challenge" ON "challenge".id = "completed_challenge".challenge_id
-    //                   WHERE "challenge".uuid = $1 AND user_id = $2
-    async fn find_by_challenge_uuid_and_user_id(
+    //                   WHERE "challenge".uuid = $1 AND user_id = $2 LIMIT 1
+    async fn first_by_challenge_uuid_and_user_id(
         &self, challenge_uuid: Uuid, user_id: i32,
     ) -> sqlx::Result<Option<CompletedChallengeRow>>;
 
     // FK shortcut, no JOIN — challenge_id is the belongs_to FK column itself
-    async fn find_by_challenge_id(&self, challenge_id: i32) -> sqlx::Result<Option<CompletedChallengeRow>>;
+    async fn first_by_challenge_id(&self, challenge_id: i32) -> sqlx::Result<Option<CompletedChallengeRow>>;
 }
 ```
 

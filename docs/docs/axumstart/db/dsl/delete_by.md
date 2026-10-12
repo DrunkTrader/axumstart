@@ -1,7 +1,7 @@
 # delete_by
 
 `delete_by_{filter}` — same [filter grammar](./dsl.md#shared-filter-grammar) as
-[find_by](./find_by.md):
+[first_by](./first_by.md):
 
 ```rust
 async fn delete_by_id(&self, id: i32) -> sqlx::Result<()>;
@@ -10,12 +10,13 @@ async fn delete_by_id(&self, id: i32) -> sqlx::Result<()>;
 
 Always returns `sqlx::Result<()>` — the row count isn't surfaced.
 
-**Cannot filter through a relation.** Unlike `find_by_*`, a `delete_by_*` filter can't reference
+**Cannot filter through a relation.** Unlike `first_by_*`, a `delete_by_*` filter can't reference
 a joined table's columns at all (even `belongs_to`'s non-JOIN FK shortcut is fine, but anything
 requiring an actual `JOIN` is rejected) — SQL's `DELETE` doesn't support joining against other
 tables the way `SELECT`/`UPDATE` can here. This is a compile error:
 
 ```rust
+#[repository(table = "user")]
 #[belongs_to(table = "team")]
 pub trait UserRepository: Repository {
     // ERROR: `delete_by_*` cannot filter through joined tables

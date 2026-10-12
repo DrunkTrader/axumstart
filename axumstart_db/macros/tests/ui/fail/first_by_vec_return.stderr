@@ -1,0 +1,11 @@
+error: `first_by_*`/`find_random_by_*` return at most one row — return `Option<T>` or `T`, not `Vec<T>`; use `find_all_by_*` for a list
+  --> tests/ui/fail/first_by_vec_return.rs:12:14
+   |
+12 |     async fn first_by_team_id(&self, team_id: i32) -> sqlx::Result<Vec<UserRow>>;
+   |              ^^^^^^^^^^^^^^^^
+
+error: `first_by_*`/`find_random_by_*` return at most one row — return `Option<T>` or `T`, not `Vec<T>`; use `find_all_by_*` for a list
+  --> tests/ui/fail/first_by_vec_return.rs:13:14
+   |
+13 |     async fn find_random_by_team_id(&self, team_id: i32) -> sqlx::Result<Vec<UserRow>>;
+   |              ^^^^^^^^^^^^^^^^^^^^^^

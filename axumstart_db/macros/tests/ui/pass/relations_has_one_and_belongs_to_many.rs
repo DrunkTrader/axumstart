@@ -11,8 +11,8 @@ struct PostRow {
 #[has_one(table = "post_meta")]
 #[belongs_to_many(table = "tag", through = "post_tag")]
 trait PostRepository: Send + Sync {
-    // has_one column — always joins, but has_one never fans out, so find_by_* is fine
-    async fn find_by_post_meta_summary(&self, summary: String) -> sqlx::Result<Option<PostRow>>;
+    // has_one column — always joins, but has_one never fans out, so first_by_* is fine
+    async fn first_by_post_meta_summary(&self, summary: String) -> sqlx::Result<Option<PostRow>>;
     // belongs_to_many column — double JOIN through the pivot table; only legal on find_all_by_*
     async fn find_all_by_tag_name(&self, name: String) -> sqlx::Result<Vec<PostRow>>;
 }

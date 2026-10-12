@@ -10,7 +10,19 @@ async fn upsert(&self, values: UserValues) -> sqlx::Result<UserRow>;
 ```
 
 Leaving off `#[unique(...)]` is a compile error. `col` is checked at compile time against `T`'s
-fields, same as any other DSL column reference.
+fields, same as any other DSL column reference — but that only confirms the field *exists*, not
+that the database treats it as unique. **You still have to add the actual constraint** (a `UNIQUE`
+column/index or `PRIMARY KEY`) in your migration/schema; the macro has no way to see that it's
+missing.
+
+- **Postgres/SQLite:** `ON CONFLICT (col)` names a specific conflict target. If `col` has no
+  matching unique or exclusion constraint, every `upsert` call fails at runtime with something
+  like `there is no unique or exclusion constraint matching the ON CONFLICT specification` —
+  the first time you actually hit a conflict, not at compile time.
+- **MySQL:** `ON DUPLICATE KEY UPDATE` doesn't name a column at all — it fires on *any* unique-key
+  violation on the table. If `col` isn't actually backed by a unique key, there's no error; the
+  statement just inserts a fresh duplicate row instead of updating, which is easy to miss since
+  nothing fails.
 
 **Always row-returning** — unlike `insert`/`insert_all`/`upsert_all`, there's no `()`-returning
 form of single-row `upsert`.

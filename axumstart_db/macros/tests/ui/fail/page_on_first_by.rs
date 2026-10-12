@@ -9,7 +9,7 @@ struct UserRow {
 
 #[repository(table = "user")]
 trait UserRepository: Send + Sync {
-    async fn find_by_id(&self, id: i32, page: Page) -> sqlx::Result<Option<UserRow>>;
+    async fn first_by_id(&self, id: i32, page: Page) -> sqlx::Result<Option<UserRow>>;
 }
 
 fn main() {}

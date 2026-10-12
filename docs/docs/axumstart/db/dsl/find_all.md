@@ -1,8 +1,5 @@
 # find_all
 
-Four related patterns, all `fetch_all`, all returning `Vec<T>` (or `sqlx::Result<()>` isn't
-meaningful here — these always return rows):
-
 | Method name | SQL |
 |---|---|
 | `find_all_by_{filter}` | `SELECT * FROM "table" WHERE {filter}` |
@@ -22,7 +19,7 @@ filter value. It also gets an extra compile-time check beyond ordinary column pr
 must actually be `bool`-typed on the row struct, not merely present (a non-bool column would
 otherwise only fail at query time).
 
-## Relations — the one place fan-out is allowed
+## Relations
 
 Unlike every other filtered method, `find_all_by_*` **is** allowed to filter through a `has_many`
 or `belongs_to_many` relation (see [relations](../relations/relations.md#fan-out-has_manybelongs_to_many-columns-are-find_all_by_-only)) —
@@ -30,6 +27,7 @@ a matching row on the far side can legitimately multiply the result set here, si
 type is already `Vec`.
 
 ```rust
+#[repository(table = "user")]
 #[has_many(table = "order")]
 pub trait UserRepository: Repository {
     async fn find_all_by_order_status(&self, status: String) -> sqlx::Result<Vec<UserRow>>;

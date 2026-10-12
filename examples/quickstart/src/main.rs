@@ -50,12 +50,12 @@ pub trait UserRepository: Repository {
 
   async fn exists_by_id(&self, id: i32) -> sqlx::Result<bool>;
 
-  // has_one — at most one profile per user via "profile".user_id; find_by_* is fine
+  // has_one — at most one profile per user via "profile".user_id; first_by_* is fine
   // since has_one, unlike has_many, can never match more than one row.
-  async fn find_by_profile_bio(&self, bio: &str) -> sqlx::Result<Option<User>>;
+  async fn first_by_profile_bio(&self, bio: &str) -> sqlx::Result<Option<User>>;
 
   // has_many — a user can have many orders, so this column is only legal on
-  // find_all_by_*; referencing it from find_by_*/count_by_*/etc. is a compile error.
+  // find_all_by_*; referencing it from first_by_*/count_by_*/etc. is a compile error.
   async fn find_all_by_order_status(&self, status: &str) -> sqlx::Result<Vec<User>>;
 }
 
@@ -205,7 +205,7 @@ async fn main() -> sqlx::Result<()> {
   println!(
     "has_one (profile):     {:?}",
     users
-      .find_by_profile_bio("Loves compilers")
+      .first_by_profile_bio("Loves compilers")
       .await?
       .map(|u| u.name)
   );

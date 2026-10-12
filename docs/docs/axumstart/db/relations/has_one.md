@@ -6,8 +6,8 @@ One-to-one — the foreign key lives on the **target** table, pointing back at t
 #[repository(table = "user")]
 #[has_one(table = "profile")]
 pub trait UserRepository: Repository {
-    // profile_bio → JOIN "profile" ON "profile".user_id = "user".id WHERE "profile".bio = $1
-    async fn find_by_profile_bio(&self, bio: String) -> sqlx::Result<Option<UserRow>>;
+    // profile_bio → JOIN "profile" ON "profile".user_id = "user".id WHERE "profile".bio = $1 LIMIT 1
+    async fn first_by_profile_bio(&self, bio: String) -> sqlx::Result<Option<UserRow>>;
 }
 ```
 

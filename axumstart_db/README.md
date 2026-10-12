@@ -25,7 +25,7 @@ Annotate a trait to generate:
 ```rust
 #[repository(table = "user_stats")]
 pub trait UserStatsRepository: Send + Sync {
-    async fn find_by_user_id(&self, user_id: i32) -> sqlx::Result<Option<UserStatsRow>>;
+    async fn first_by_user_id(&self, user_id: i32) -> sqlx::Result<Option<UserStatsRow>>;
     async fn insert(&self, values: UserStatsValues) -> sqlx::Result<UserStatsRow>;
     fn db(&self) -> &DbPool;
 }
@@ -35,14 +35,14 @@ pub trait UserStatsRepository: Send + Sync {
 
 ### `join(table_name)` — cross-table field resolution
 
-Declare related tables so that `find_by_*` method names can reference their columns:
+Declare related tables so that `first_by_*` method names can reference their columns:
 
 ```rust
 #[repository(table = "completed_challenge", join(challenge))]
 pub trait CompletedChallengeRepository: Send + Sync {
     // challenge_uuid → JOIN "challenge" ON "challenge".id = "completed_challenge".challenge_id
-    //                   WHERE "challenge".uuid = $1 AND user_id = $2
-    async fn find_by_challenge_uuid_and_user_id(
+    //                   WHERE "challenge".uuid = $1 AND user_id = $2 LIMIT 1
+    async fn first_by_challenge_uuid_and_user_id(
         &self, challenge_uuid: Uuid, user_id: i32,
     ) -> sqlx::Result<Option<CompletedChallengeRow>>;
 }
@@ -56,8 +56,8 @@ Field resolution: `{join_name}_{col}` → `"{join_name}".{col}` with JOIN added.
 
 | Method name pattern | Generated SQL |
 |---|---|
-| `find_by_{field}` | `SELECT * FROM "{table}" WHERE {field} = $1` |
-| `find_by_{f1}_and_{f2}` | `SELECT * FROM "{table}" WHERE f1 = $1 AND f2 = $2` |
+| `first_by_{field}` | `SELECT * FROM "{table}" WHERE {field} = $1 LIMIT 1` |
+| `first_by_{f1}_and_{f2}` | `SELECT * FROM "{table}" WHERE f1 = $1 AND f2 = $2 LIMIT 1` |
 | `find_all_by_{field}` | `SELECT * FROM "{table}" WHERE {field} = $1` (always `fetch_all`) |
 | `find_random_by_{field}` | `SELECT * FROM "{table}" WHERE {field} = $1 ORDER BY RANDOM() LIMIT 1` |
 | `exists_by_{field}` | `SELECT EXISTS(SELECT 1 FROM "{table}" WHERE {field} = $1)` |
@@ -82,9 +82,9 @@ only applies to the Row-returning form).
 | `db` or `pool` | Returns `&self.pool` |
 
 Multi-field `_and_` chaining works for any number of fields:
-`find_by_user_id_and_test_type` → `WHERE user_id = $1 AND test_type = $2`.
+`first_by_user_id_and_test_type` → `WHERE user_id = $1 AND test_type = $2`.
 
-**Fetch mode** for `find_by_*` is inferred from the return type:
+**Fetch mode** for `first_by_*` is inferred from the return type:
 - `Option<T>` → `fetch_optional`
 - `Vec<T>` → `fetch_all`
 - anything else → `fetch_one`
@@ -95,7 +95,7 @@ Multi-field `_and_` chaining works for any number of fields:
 
 ### `_in` — works the same on every backend
 
-`find_by_id_in`, `delete_by_id_in`, `find_all_by_id_in`, etc. take a `Vec<T>` and render
+`first_by_id_in`, `delete_by_id_in`, `find_all_by_id_in`, etc. take a `Vec<T>` and render
 an `IN (...)` list. Unlike the original Postgres-only implementation (which used
 `= ANY($n)`), this is now built at runtime via `sqlx::QueryBuilder` — the same code path
 on all three backends, since neither MySQL nor SQLite (nor, for consistency, Postgres

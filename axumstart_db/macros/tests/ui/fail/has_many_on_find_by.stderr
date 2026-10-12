@@ -1,5 +1,0 @@
-error: this filter is reached through a has_many/belongs_to_many relation and may match multiple rows; only find_all_by_* may filter through it
-  --> tests/ui/fail/has_many_on_find_by.rs:13:14
-   |
-13 |     async fn find_by_order_status(&self, status: String) -> sqlx::Result<Option<UserRow>>;
-   |              ^^^^^^^^^^^^^^^^^^^^

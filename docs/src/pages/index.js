@@ -16,7 +16,7 @@ const Libraries = [
     title: 'axumstart_db',
     to: '/docs/axumstart/db',
     description:
-      'A #[repository] macro that turns trait method names like find_by_user_id or ' +
+      'A #[repository] macro that turns trait method names like first_by_user_id or ' +
       'insert_all into sqlx queries against Postgres, MySQL, or SQLite.',
   },
 ];

@@ -1,7 +1,7 @@
 # find_random_by
 
 `find_random_by_{filter}` — same [filter grammar](./dsl.md#shared-filter-grammar) as
-[find_by](./find_by.md), but orders randomly and limits to one row:
+[first_by](./first_by.md), but orders randomly and limits to one row:
 
 ```rust
 async fn find_random_by_team_id(&self, team_id: i32) -> sqlx::Result<Option<UserRow>>;
@@ -12,9 +12,9 @@ The `ORDER BY` clause is backend-specific — `RANDOM()` on Postgres/SQLite, `RA
 chosen at macro-expansion time from the active `postgres`/`mysql`/`sqlite` feature, so the method
 body itself is identical across backends.
 
-Fetch mode is inferred from the return type the same way as `find_by_*`, including the same
+Fetch mode is inferred from the return type the same way as `first_by_*`, including the same
 `Vec<T>` compile error (see
-[find_by](./find_by.md#fetch-mode--inferred-from-the-return-type)).
+[first_by](./first_by.md#fetch-mode--inferred-from-the-return-type)).
 
 **Not supported here:** `#[order_by(...)]` (there's already a random order) — a compile error if
 present.

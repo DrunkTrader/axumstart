@@ -13,6 +13,11 @@ Unlike single-row `upsert`, this **does** support a `()`-returning form — decl
 sqlx::Result<()>` to skip fetching the written rows back. An empty `Vec` short-circuits without
 touching the database.
 
+Same requirement as single-row `upsert`: `#[unique(col)]` only checks that `col` is a real field
+on `T` at compile time, not that the database column is actually `UNIQUE`/`PRIMARY KEY`. See
+[upsert](./upsert.md) for what happens per-dialect if that constraint is missing — it's the same
+failure mode here, just hit on the first batch with a real conflict.
+
 ## Per-dialect SQL
 
 **Postgres/SQLite:** built with `sqlx::QueryBuilder::push_values`, same as

@@ -16,7 +16,7 @@ trait OrderRepository: Send + Sync {
     // FK shortcut — no JOIN, queries order.user_id directly
     async fn find_all_by_user_id(&self, user_id: i32) -> sqlx::Result<Vec<OrderRow>>;
     #[transactional]
-    async fn find_by_id(&self, id: i32) -> sqlx::Result<Option<OrderRow>>;
+    async fn first_by_id(&self, id: i32) -> sqlx::Result<Option<OrderRow>>;
     #[transactional]
     async fn delete_by_id(&self, id: i32) -> sqlx::Result<()>;
 }

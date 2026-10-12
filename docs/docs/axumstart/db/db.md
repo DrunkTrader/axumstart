@@ -2,7 +2,7 @@
 sidebar_position: 3
 ---
 
-# db
+# Db
 
 Generates a repository implementation from a trait definition: annotate the trait, name your
 methods following a small set of conventions, and the SQL (Postgres, MySQL, or SQLite — one
@@ -18,9 +18,6 @@ generated queries at macro-expansion time — enabling zero or more than one is 
 axumstart = { version = "...", features = ["postgres"] }
 ```
 
-This gives you `Db` (the `sqlx::Database` for the chosen backend), plus the aliases `DbPool =
-sqlx::Pool<Db>` and `DbConnection = <Db as sqlx::Database>::Connection`.
-
 ## `#[repository(table = "...")]`
 
 Annotate a trait to generate:
@@ -30,7 +27,7 @@ Annotate a trait to generate:
 ```rust
 #[repository(table = "user_stats")]
 pub trait UserStatsRepository: Repository {
-    async fn find_by_user_id(&self, user_id: i32) -> sqlx::Result<Option<UserStatsRow>>;
+    async fn first_by_user_id(&self, user_id: i32) -> sqlx::Result<Option<UserStatsRow>>;
     async fn insert(&self, values: UserStatsValues) -> sqlx::Result<UserStatsRow>;
 }
 ```
@@ -46,7 +43,7 @@ See [dsl](./dsl/dsl.md) for the full grammar (operators, connectors, ordering, p
 
 | Function type | Pattern |
 |---|---|
-| [find_by](./dsl/find_by.md) | `find_by_{filter}` |
+| [first_by](./dsl/first_by.md) | `first_by_{filter}` |
 | [find_random_by](./dsl/find_random_by.md) | `find_random_by_{filter}` |
 | [find_all](./dsl/find_all.md) | `find_all_by_{filter}`, `find_all`, `find_all_order_by_{col}`, `find_all_{bool_field}` |
 | [count_by](./dsl/count_by.md) | `count_by_{filter}` |
