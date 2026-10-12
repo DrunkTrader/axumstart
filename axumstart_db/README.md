@@ -27,7 +27,6 @@ Annotate a trait to generate:
 pub trait UserStatsRepository: Send + Sync {
     async fn first_by_user_id(&self, user_id: i32) -> sqlx::Result<Option<UserStatsRow>>;
     async fn insert(&self, values: UserStatsValues) -> sqlx::Result<UserStatsRow>;
-    fn db(&self) -> &DbPool;
 }
 
 // Generated: DbUserStatsRepository { pool }  +  impl UserStatsRepository for DbUserStatsRepository
@@ -60,10 +59,14 @@ Field resolution: `{join_name}_{col}` → `"{join_name}".{col}` with JOIN added.
 | `first_by_{f1}_and_{f2}` | `SELECT * FROM "{table}" WHERE f1 = $1 AND f2 = $2 LIMIT 1` |
 | `find_all_by_{field}` | `SELECT * FROM "{table}" WHERE {field} = $1` (always `fetch_all`) |
 | `find_random_by_{field}` | `SELECT * FROM "{table}" WHERE {field} = $1 ORDER BY RANDOM() LIMIT 1` |
+| `count_by_{field}` | `SELECT COUNT(*) FROM "{table}" WHERE {field} = $1` |
 | `exists_by_{field}` | `SELECT EXISTS(SELECT 1 FROM "{table}" WHERE {field} = $1)` |
 | `delete_by_{field}` | `DELETE FROM "{table}" WHERE {field} = $1` |
 | `insert` | Delegates to `SqlxInsert::__sqlx_insert_into` (requires `#[derive(SqlxInsert)]` on the values struct) |
 | `insert_all` | Single multi-row INSERT for the whole batch |
+| `upsert` | Insert, or update in place on conflict — requires `#[unique(col)]` (see below) |
+| `upsert_all` | Batch form of `upsert`, one round-trip for the whole batch |
+| `db` or `pool` | Returns `&self.pool` |
 
 `insert` and `insert_all` only fetch the written row(s) back when the method actually
 returns them. Declare `-> sqlx::Result<()>` instead of `-> sqlx::Result<Row>` /
@@ -79,15 +82,29 @@ Bonus on MySQL: since the void form is a single statement, it doesn't need `E: C
 way the Row-returning form does — `#[transactional] insert`/`insert_all` **does** work on
 MySQL when the return type is `()` (see the `#[transactional]` limitation below, which
 only applies to the Row-returning form).
-| `db` or `pool` | Returns `&self.pool` |
+
+`upsert`/`upsert_all` require `#[unique(col)]` on the method, naming the conflict column:
+
+```rust
+#[unique(username)]
+async fn upsert(&self, values: UserValues) -> sqlx::Result<UserRow>;
+```
+
+This is only checked at compile time against `T`'s fields — it does **not** verify the database
+column is actually `UNIQUE`/`PRIMARY KEY`. Missing that constraint fails at runtime on Postgres/
+SQLite (`no unique or exclusion constraint matching the ON CONFLICT specification`) and fails
+silently on MySQL (inserts a duplicate row instead of updating, since `ON DUPLICATE KEY UPDATE`
+has nothing to match against). See [upsert](../docs/docs/axumstart/db/dsl/upsert.md) for details.
 
 Multi-field `_and_` chaining works for any number of fields:
 `first_by_user_id_and_test_type` → `WHERE user_id = $1 AND test_type = $2`.
 
 **Fetch mode** for `first_by_*` is inferred from the return type:
 - `Option<T>` → `fetch_optional`
-- `Vec<T>` → `fetch_all`
-- anything else → `fetch_one`
+- anything else (e.g. `T`) → `fetch_one`
+
+`-> Vec<T>` is a compile error on `first_by_*`/`find_random_by_*` (they always fetch at most one
+row); use `find_all_by_*` for a list, which is always `fetch_all`.
 
 **Methods with a default body** are emitted as-is; no codegen is applied.
 
