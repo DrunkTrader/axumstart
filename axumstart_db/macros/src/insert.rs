@@ -230,6 +230,72 @@ fn returning_impl(name: &syn::Ident, field_names: &[&syn::Ident]) -> syn::Result
                     .fetch_one(executor)
                     .await
             }
+
+            // Batch INSERT ... ON CONFLICT (conflict_col) DO UPDATE ... RETURNING *. The row
+            // count varies per call, so (unlike `__sqlx_upsert_into`) this can't cache a single
+            // static SQL string — the ON CONFLICT clause is rebuilt each call instead, which is
+            // cheap next to the QueryBuilder round-trip itself.
+            pub async fn __sqlx_upsert_all_into<'e, E, Row>(
+                rows: ::std::vec::Vec<Self>,
+                table: &'static str,
+                conflict_col: &'static str,
+                executor: E,
+            ) -> ::sqlx::Result<::std::vec::Vec<Row>>
+            where
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
+                Row: for<'r> ::sqlx::FromRow<'r, <#db::Db as ::sqlx::Database>::Row> + Send + Unpin,
+            {
+                if rows.is_empty() {
+                    return ::std::result::Result::Ok(::std::vec::Vec::new());
+                }
+                static __COLS: &[&str] = &[#(#col_strs),*];
+                let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(
+                    ::std::format!(#insert_all_prefix_template, table),
+                );
+                __qb.push_values(rows, |mut __b, __row| {
+                    #(#push_bind_calls)*
+                });
+                let __set_clause = __COLS
+                    .iter()
+                    .filter(|&&c| c != conflict_col)
+                    .map(|c| ::std::format!("{c} = EXCLUDED.{c}"))
+                    .collect::<::std::vec::Vec<_>>()
+                    .join(", ");
+                __qb.push(::std::format!(
+                    " ON CONFLICT ({conflict_col}) DO UPDATE SET {__set_clause} RETURNING *"
+                ));
+                __qb.build_query_as::<Row>().fetch_all(executor).await
+            }
+
+            // Same batch upsert, no RETURNING — for callers that don't want the rows back.
+            pub async fn __sqlx_upsert_all_into_void<'e, E>(
+                rows: ::std::vec::Vec<Self>,
+                table: &'static str,
+                conflict_col: &'static str,
+                executor: E,
+            ) -> ::sqlx::Result<()>
+            where
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
+            {
+                if rows.is_empty() {
+                    return ::std::result::Result::Ok(());
+                }
+                static __COLS: &[&str] = &[#(#col_strs),*];
+                let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(
+                    ::std::format!(#insert_all_prefix_template, table),
+                );
+                __qb.push_values(rows, |mut __b, __row| {
+                    #(#push_bind_calls)*
+                });
+                let __set_clause = __COLS
+                    .iter()
+                    .filter(|&&c| c != conflict_col)
+                    .map(|c| ::std::format!("{c} = EXCLUDED.{c}"))
+                    .collect::<::std::vec::Vec<_>>()
+                    .join(", ");
+                __qb.push(::std::format!(" ON CONFLICT ({conflict_col}) DO UPDATE SET {__set_clause}"));
+                __qb.build().execute(executor).await.map(|_| ())
+            }
         }
     })
 }
@@ -265,6 +331,42 @@ fn mysql_impl(name: &syn::Ident, field_names: &[&syn::Ident], key_col: &str) -> 
         .iter()
         .zip(&clone_idents)
         .map(|(f, c)| quote!(let #c = self.#f.clone();))
+        .collect();
+    // Batch upsert's ON DUPLICATE KEY UPDATE always sets every column (MySQL doesn't mind
+    // re-setting the conflict column to its own value, unlike Postgres's EXCLUDED clause).
+    let on_duplicate_suffix = format!(
+        " ON DUPLICATE KEY UPDATE {}",
+        col_strs.iter().map(|c| format!("{c} = VALUES({c})")).collect::<Vec<_>>().join(", ")
+    );
+    // One fully-assembled match arm per field, built here rather than relying on lockstep
+    // repetition inside `quote!` — each arm needs its own select-back template and field
+    // access, so it's simpler to hand `quote!` one TokenStream2 per arm than to juggle
+    // several parallel Vecs inside a single `#(...)*`.
+    let upsert_all_arms: Vec<TokenStream2> = field_names
+        .iter()
+        .zip(&col_strs)
+        .map(|(f, col)| {
+            let select_template = format!("SELECT * FROM `{{}}` WHERE {col} IN ");
+            quote! {
+                #col => {
+                    let __keys: ::std::vec::Vec<_> = rows.iter().map(|__row| __row.#f.clone()).collect();
+                    let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(
+                        ::std::format!(#insert_all_prefix_template, table),
+                    );
+                    __qb.push_values(rows, |mut __b, __row| {
+                        #(#push_bind_calls)*
+                    });
+                    __qb.push(#on_duplicate_suffix);
+                    __qb.build().execute(executor).await?;
+
+                    let mut __sqb = ::sqlx::QueryBuilder::<#db::Db>::new(
+                        ::std::format!(#select_template, table),
+                    );
+                    #db::push_in_list(&mut __sqb, __keys);
+                    __sqb.build_query_as::<Row>().fetch_all(executor).await
+                }
+            }
+        })
         .collect();
 
     Ok(quote! {
@@ -454,6 +556,59 @@ fn mysql_impl(name: &syn::Ident, field_names: &[&syn::Ident], key_col: &str) -> 
                     #( #col_strs => return ::sqlx::query_as::<_, Row>(select_sql).bind(#clone_idents).fetch_one(executor).await, )*
                     other => ::std::panic!("__sqlx_upsert_into: `{}` is not a field of this values struct", other),
                 }
+            }
+
+            // Batch INSERT ... ON DUPLICATE KEY UPDATE, then SELECT-back by
+            // `{conflict_col} IN (...)`. Unlike `__sqlx_insert_all_into`'s auto-increment
+            // range trick, this works for a mixed insert/update batch because the conflict
+            // column's values are already known before the write (they're struct fields),
+            // not DB-assigned — so the values to extract are collected up front, per the
+            // (compile-time-known-per-arm) field matching the runtime `conflict_col`.
+            pub async fn __sqlx_upsert_all_into<'e, E, Row>(
+                rows: ::std::vec::Vec<Self>,
+                table: &'static str,
+                conflict_col: &'static str,
+                executor: E,
+            ) -> ::sqlx::Result<::std::vec::Vec<Row>>
+            where
+                E: ::sqlx::Executor<'e, Database = #db::Db> + ::std::marker::Copy,
+                Row: for<'r> ::sqlx::FromRow<'r, <#db::Db as ::sqlx::Database>::Row> + Send + Unpin,
+            {
+                if rows.is_empty() {
+                    return ::std::result::Result::Ok(::std::vec::Vec::new());
+                }
+                match conflict_col {
+                    #(#upsert_all_arms)*
+                    other => ::std::panic!("__sqlx_upsert_all_into: `{}` is not a field of this values struct", other),
+                }
+            }
+
+            // Same batch upsert, no SELECT-back — for callers that don't want the rows back.
+            // Doesn't need `E: Copy` (a single statement), so it also works with `#[transactional]`.
+            pub async fn __sqlx_upsert_all_into_void<'e, E>(
+                rows: ::std::vec::Vec<Self>,
+                table: &'static str,
+                conflict_col: &'static str,
+                executor: E,
+            ) -> ::sqlx::Result<()>
+            where
+                E: ::sqlx::Executor<'e, Database = #db::Db>,
+            {
+                if rows.is_empty() {
+                    return ::std::result::Result::Ok(());
+                }
+                static __COLS: &[&str] = &[#(#col_strs),*];
+                if !__COLS.contains(&conflict_col) {
+                    ::std::panic!("__sqlx_upsert_all_into_void: `{}` is not a field of this values struct", conflict_col);
+                }
+                let mut __qb = ::sqlx::QueryBuilder::<#db::Db>::new(
+                    ::std::format!(#insert_all_prefix_template, table),
+                );
+                __qb.push_values(rows, |mut __b, __row| {
+                    #(#push_bind_calls)*
+                });
+                __qb.push(#on_duplicate_suffix);
+                __qb.build().execute(executor).await.map(|_| ())
             }
         }
     })

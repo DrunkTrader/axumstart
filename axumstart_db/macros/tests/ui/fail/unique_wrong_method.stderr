@@ -1,4 +1,4 @@
-error: `#[unique(...)]` on `find_by_username` has no effect; it only applies to `upsert`
+error: `#[unique(...)]` on `find_by_username` has no effect; it only applies to `upsert`/`upsert_all`
   --> tests/ui/fail/unique_wrong_method.rs:13:14
    |
 13 |     async fn find_by_username(&self, username: String) -> sqlx::Result<Option<UserRow>>;

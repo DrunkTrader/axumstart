@@ -7,20 +7,24 @@
 //! `::axumstart_db::...` token paths instead, so this module stays small.
 
 pub fn placeholder(idx: usize) -> String {
-    if cfg!(feature = "postgres") {
-        format!("${idx}")
-    } else {
-        "?".to_string()
-    }
+  if cfg!(feature = "postgres") {
+    format!("${idx}")
+  } else {
+    "?".to_string()
+  }
 }
 
 /// Postgres and SQLite both support `RETURNING *` (including after `ON CONFLICT`).
 /// MySQL has no RETURNING at all — callers emulate it with a follow-up SELECT
 /// (see `insert.rs`/`update.rs`'s `is_mysql()` branches).
 pub fn is_mysql() -> bool {
-    cfg!(feature = "mysql")
+  cfg!(feature = "mysql")
 }
 
 pub fn random_order_sql() -> &'static str {
-    if cfg!(feature = "mysql") { "ORDER BY RAND()" } else { "ORDER BY RANDOM()" }
+  if cfg!(feature = "mysql") {
+    "ORDER BY RAND()"
+  } else {
+    "ORDER BY RANDOM()"
+  }
 }

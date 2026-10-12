@@ -30,6 +30,8 @@ trait UserRepository: Send + Sync {
     async fn insert_all(&self, values: Vec<UserValues>) -> sqlx::Result<Vec<UserRow>>;
     #[unique(username)]
     async fn upsert(&self, values: UserValues) -> sqlx::Result<UserRow>;
+    #[unique(username)]
+    async fn upsert_all(&self, values: Vec<UserValues>) -> sqlx::Result<Vec<UserRow>>;
     async fn update(&self, row: UserRowUpdate) -> sqlx::Result<UserRow>;
 }
 

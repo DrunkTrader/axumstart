@@ -2,117 +2,121 @@
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Op {
-    Eq,
-    In,
-    Gt,
-    Gte,
-    Lt,
-    Lte,
-    Like,
-    IsNull,
-    IsNotNull,
+  Eq,
+  In,
+  Gt,
+  Gte,
+  Lt,
+  Lte,
+  Like,
+  IsNull,
+  IsNotNull,
 }
 
 impl Op {
-    pub fn takes_param(self) -> bool {
-        !matches!(self, Op::IsNull | Op::IsNotNull)
-    }
+  pub fn takes_param(self) -> bool {
+    !matches!(self, Op::IsNull | Op::IsNotNull)
+  }
 
-    pub fn is_list(self) -> bool {
-        matches!(self, Op::In)
-    }
+  pub fn is_list(self) -> bool {
+    matches!(self, Op::In)
+  }
 
-    /// SQL fragment up to (not including) the placeholder. For `IsNull`/`IsNotNull` this
-    /// is the complete condition (no placeholder follows). For `In` this is
-    /// `"{target} IN "` — the caller appends a QueryBuilder-rendered value list, since no
-    /// backend lets a single placeholder bind a `Vec<T>` the way this crate used to rely
-    /// on Postgres's `= ANY($n)`.
-    pub fn prefix(self, target: &str) -> String {
-        match self {
-            Op::Eq => format!("{target} = "),
-            Op::In => format!("{target} IN "),
-            Op::Gt => format!("{target} > "),
-            Op::Gte => format!("{target} >= "),
-            Op::Lt => format!("{target} < "),
-            Op::Lte => format!("{target} <= "),
-            Op::Like => format!("{target} LIKE "),
-            Op::IsNull => format!("{target} IS NULL"),
-            Op::IsNotNull => format!("{target} IS NOT NULL"),
-        }
+  /// SQL fragment up to (not including) the placeholder. For `IsNull`/`IsNotNull` this
+  /// is the complete condition (no placeholder follows). For `In` this is
+  /// `"{target} IN "` — the caller appends a QueryBuilder-rendered value list, since no
+  /// backend lets a single placeholder bind a `Vec<T>` the way this crate used to rely
+  /// on Postgres's `= ANY($n)`.
+  pub fn prefix(self, target: &str) -> String {
+    match self {
+      Op::Eq => format!("{target} = "),
+      Op::In => format!("{target} IN "),
+      Op::Gt => format!("{target} > "),
+      Op::Gte => format!("{target} >= "),
+      Op::Lt => format!("{target} < "),
+      Op::Lte => format!("{target} <= "),
+      Op::Like => format!("{target} LIKE "),
+      Op::IsNull => format!("{target} IS NULL"),
+      Op::IsNotNull => format!("{target} IS NOT NULL"),
     }
+  }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Connector {
-    And,
-    Or,
+  And,
+  Or,
 }
 
 impl Connector {
-    fn sql(self) -> &'static str {
-        match self {
-            Connector::And => "AND",
-            Connector::Or => "OR",
-        }
+  fn sql(self) -> &'static str {
+    match self {
+      Connector::And => "AND",
+      Connector::Or => "OR",
     }
+  }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Condition {
-    pub column: String,
-    pub op: Op,
-    /// Connector between this condition and the next one.
-    pub connector: Option<Connector>,
+  pub column: String,
+  pub op: Op,
+  /// Connector between this condition and the next one.
+  pub connector: Option<Connector>,
 }
 
 // Longest suffixes first so `_gte` wins over `_gt`, `_is_not_null` over `_is_null`.
 const OP_SUFFIXES: &[(&str, Op)] = &[
-    ("_is_not_null", Op::IsNotNull),
-    ("_is_null", Op::IsNull),
-    ("_like", Op::Like),
-    ("_gte", Op::Gte),
-    ("_lte", Op::Lte),
-    ("_gt", Op::Gt),
-    ("_lt", Op::Lt),
-    ("_in", Op::In),
+  ("_is_not_null", Op::IsNotNull),
+  ("_is_null", Op::IsNull),
+  ("_like", Op::Like),
+  ("_gte", Op::Gte),
+  ("_lte", Op::Lte),
+  ("_gt", Op::Gt),
+  ("_lt", Op::Lt),
+  ("_in", Op::In),
 ];
 
 fn split_op(field: &str) -> (&str, Op) {
-    for (suffix, op) in OP_SUFFIXES {
-        if let Some(col) = field.strip_suffix(suffix) {
-            if !col.is_empty() {
-                return (col, *op);
-            }
-        }
+  for (suffix, op) in OP_SUFFIXES {
+    if let Some(col) = field.strip_suffix(suffix) {
+      if !col.is_empty() {
+        return (col, *op);
+      }
     }
-    (field, Op::Eq)
+  }
+  (field, Op::Eq)
 }
 
 /// "username_or_email" → [username OR][email], "a_and_b_in" → [a AND][b IN], "x_is_null" → [x IS NULL]
 pub fn parse_conditions(s: &str) -> Result<Vec<Condition>, String> {
-    let mut out = Vec::new();
-    let mut rest = s;
-    loop {
-        let and_pos = rest.find("_and_");
-        let or_pos = rest.find("_or_");
-        let (field, connector, next) = match (and_pos, or_pos) {
-            (None, None) => (rest, None, None),
-            (Some(a), None) => (&rest[..a], Some(Connector::And), Some(&rest[a + 5..])),
-            (None, Some(o)) => (&rest[..o], Some(Connector::Or), Some(&rest[o + 4..])),
-            (Some(a), Some(o)) if a < o => (&rest[..a], Some(Connector::And), Some(&rest[a + 5..])),
-            (_, Some(o)) => (&rest[..o], Some(Connector::Or), Some(&rest[o + 4..])),
-        };
-        let (column, op) = split_op(field);
-        if column.is_empty() {
-            return Err(format!("empty column name in filter `{s}`"));
-        }
-        out.push(Condition { column: column.to_string(), op, connector });
-        match next {
-            Some(n) => rest = n,
-            None => break,
-        }
+  let mut out = Vec::new();
+  let mut rest = s;
+  loop {
+    let and_pos = rest.find("_and_");
+    let or_pos = rest.find("_or_");
+    let (field, connector, next) = match (and_pos, or_pos) {
+      (None, None) => (rest, None, None),
+      (Some(a), None) => (&rest[..a], Some(Connector::And), Some(&rest[a + 5..])),
+      (None, Some(o)) => (&rest[..o], Some(Connector::Or), Some(&rest[o + 4..])),
+      (Some(a), Some(o)) if a < o => (&rest[..a], Some(Connector::And), Some(&rest[a + 5..])),
+      (_, Some(o)) => (&rest[..o], Some(Connector::Or), Some(&rest[o + 4..])),
+    };
+    let (column, op) = split_op(field);
+    if column.is_empty() {
+      return Err(format!("empty column name in filter `{s}`"));
     }
-    Ok(out)
+    out.push(Condition {
+      column: column.to_string(),
+      op,
+      connector,
+    });
+    match next {
+      Some(n) => rest = n,
+      None => break,
+    }
+  }
+  Ok(out)
 }
 
 /// One piece of a WHERE clause, in the shape needed to emit either a static SQL string
@@ -120,60 +124,71 @@ pub fn parse_conditions(s: &str) -> Result<Vec<Condition>, String> {
 /// path taken as soon as any condition does — see `WhereClause::has_in`).
 #[derive(Debug, Clone)]
 pub enum WhereChunk {
-    /// Raw SQL text (column/operator text, connectors, or a complete no-param condition).
-    Literal(String),
-    /// A regular scalar bind — index into the caller's WHERE-relevant bind expressions.
-    Bind(usize),
-    /// An `_in` bind (a `Vec<T>`) — same indexing as `Bind`, rendered via
-    /// `axumstart_db::push_in_list` instead of a single placeholder.
-    InList(usize),
+  /// Raw SQL text (column/operator text, connectors, or a complete no-param condition).
+  Literal(String),
+
+  /// A regular scalar bind — index into the caller's WHERE-relevant bind expressions.
+  Bind(usize),
+
+  /// An `_in` bind (a `Vec<T>`) — same indexing as `Bind`, rendered via
+  /// `axumstart_db::push_in_list` instead of a single placeholder.
+  InList(usize),
 }
 
 pub struct WhereClause {
-    /// Only valid when `has_in` is false — pre-rendered with dialect placeholders.
-    pub sql: String,
-    /// Always populated; used by the QueryBuilder codegen path when `has_in` is true.
-    pub chunks: Vec<WhereChunk>,
-    /// True if any condition uses the `_in` operator, forcing the QueryBuilder path.
-    pub has_in: bool,
-    /// Join table names referenced by conditions (in first-use order).
-    pub joins_needed: Vec<String>,
-    /// Base-table columns usable for Row-struct probing (join-resolved columns excluded).
-    pub probe_cols: Vec<String>,
-    /// Number of bind parameters the WHERE clause consumes (one per `In` too — it still
-    /// binds a single `Vec<T>` method parameter).
-    pub params: usize,
-    /// True if any resolved column came from a `HasMany`/`BelongsToMany` relation — such a
-    /// relation can match multiple rows per base-table row, so callers must reject this
-    /// outside `find_all_by_*`.
-    pub fan_out: bool,
+  /// Only valid when `has_in` is false — pre-rendered with dialect placeholders.
+  pub sql: String,
+
+  /// Always populated; used by the QueryBuilder codegen path when `has_in` is true.
+  pub chunks: Vec<WhereChunk>,
+
+  /// True if any condition uses the `_in` operator, forcing the QueryBuilder path.
+  pub has_in: bool,
+
+  /// Join table names referenced by conditions (in first-use order).
+  pub joins_needed: Vec<String>,
+
+  /// Base-table columns usable for Row-struct probing (join-resolved columns excluded).
+  pub probe_cols: Vec<String>,
+
+  /// Number of bind parameters the WHERE clause consumes (one per `In` too — it still
+  /// binds a single `Vec<T>` method parameter).
+  pub params: usize,
+
+  /// True if any resolved column came from a `HasMany`/`BelongsToMany` relation — such a
+  /// relation can match multiple rows per base-table row, so callers must reject this
+  /// outside `find_all_by_*`.
+  pub fan_out: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelationKind {
-    BelongsTo,
-    HasOne,
-    HasMany,
-    BelongsToMany,
+  BelongsTo,
+  HasOne,
+  HasMany,
+  BelongsToMany,
 }
 
 impl RelationKind {
-    /// A `has_many`/`belongs_to_many` join can match multiple rows on the far side.
-    pub fn fans_out(self) -> bool {
-        matches!(self, RelationKind::HasMany | RelationKind::BelongsToMany)
-    }
+  /// A `has_many`/`belongs_to_many` join can match multiple rows on the far side.
+  pub fn fans_out(self) -> bool {
+    matches!(self, RelationKind::HasMany | RelationKind::BelongsToMany)
+  }
 }
 
 #[derive(Debug, Clone)]
 pub struct Relation {
-    /// Target table name AND the DSL prefix matched in method names.
-    pub table: String,
-    pub kind: RelationKind,
-    pub fk: String,
-    /// `BelongsToMany` only.
-    pub other_fk: Option<String>,
-    /// `BelongsToMany` only.
-    pub through: Option<String>,
+  /// Target table name AND the DSL prefix matched in method names.
+  pub table: String,
+
+  pub kind: RelationKind,
+  pub fk: String,
+
+  /// `BelongsToMany` only.
+  pub other_fk: Option<String>,
+
+  /// `BelongsToMany` only.
+  pub through: Option<String>,
 }
 
 /// `sql_offset` shifts placeholder indices (UPDATE puts SET params first) in the fast-path
@@ -181,94 +196,99 @@ pub struct Relation {
 /// expressions the caller passes alongside `chunks` (e.g. `gen_set` passes only the
 /// filter-side binds, not the SET-side ones), so it usually stays 0.
 pub fn build_where(
-    conds: &[Condition],
-    relations: &[Relation],
-    sql_offset: usize,
-    bind_offset: usize,
-    placeholder: &dyn Fn(usize) -> String,
+  conds: &[Condition],
+  relations: &[Relation],
+  sql_offset: usize,
+  bind_offset: usize,
+  placeholder: &dyn Fn(usize) -> String,
 ) -> WhereClause {
-    let mut joins_needed: Vec<String> = Vec::new();
-    let mut probe_cols: Vec<String> = Vec::new();
-    let mut sql_parts: Vec<String> = Vec::new();
-    let mut chunks: Vec<WhereChunk> = Vec::new();
-    let mut has_in = false;
-    let mut fan_out = false;
-    let mut idx = sql_offset;
-    let mut bind_idx = bind_offset;
+  let mut joins_needed: Vec<String> = Vec::new();
+  let mut probe_cols: Vec<String> = Vec::new();
+  let mut sql_parts: Vec<String> = Vec::new();
+  let mut chunks: Vec<WhereChunk> = Vec::new();
+  let mut has_in = false;
+  let mut fan_out = false;
+  let mut idx = sql_offset;
+  let mut bind_idx = bind_offset;
 
-    for c in conds {
-        let target =
-            resolve_target(&c.column, relations, &mut joins_needed, &mut probe_cols, &mut fan_out);
-        let prefix = c.op.prefix(&target);
+  for c in conds {
+    let target = resolve_target(
+      &c.column,
+      relations,
+      &mut joins_needed,
+      &mut probe_cols,
+      &mut fan_out,
+    );
+    let prefix = c.op.prefix(&target);
 
-        if c.op.is_list() {
-            has_in = true;
-            idx += 1;
-            chunks.push(WhereChunk::Literal(prefix));
-            chunks.push(WhereChunk::InList(bind_idx));
-            bind_idx += 1;
-        } else if c.op.takes_param() {
-            idx += 1;
-            let ph = placeholder(idx);
-            sql_parts.push(format!("{prefix}{ph}"));
-            chunks.push(WhereChunk::Literal(prefix));
-            chunks.push(WhereChunk::Bind(bind_idx));
-            bind_idx += 1;
-        } else {
-            sql_parts.push(prefix.clone());
-            chunks.push(WhereChunk::Literal(prefix));
-        }
-
-        if let Some(conn) = c.connector {
-            let conn_sql = format!(" {} ", conn.sql());
-            sql_parts.push(conn.sql().to_string());
-            chunks.push(WhereChunk::Literal(conn_sql));
-        }
+    if c.op.is_list() {
+      has_in = true;
+      idx += 1;
+      chunks.push(WhereChunk::Literal(prefix));
+      chunks.push(WhereChunk::InList(bind_idx));
+      bind_idx += 1;
+    } else if c.op.takes_param() {
+      idx += 1;
+      let ph = placeholder(idx);
+      sql_parts.push(format!("{prefix}{ph}"));
+      chunks.push(WhereChunk::Literal(prefix));
+      chunks.push(WhereChunk::Bind(bind_idx));
+      bind_idx += 1;
+    } else {
+      sql_parts.push(prefix.clone());
+      chunks.push(WhereChunk::Literal(prefix));
     }
 
-    WhereClause {
-        sql: sql_parts.join(" "),
-        chunks,
-        has_in,
-        joins_needed,
-        probe_cols,
-        params: idx - sql_offset,
-        fan_out,
+    if let Some(conn) = c.connector {
+      let conn_sql = format!(" {} ", conn.sql());
+      sql_parts.push(conn.sql().to_string());
+      chunks.push(WhereChunk::Literal(conn_sql));
     }
+  }
+
+  WhereClause {
+    sql: sql_parts.join(" "),
+    chunks,
+    has_in,
+    joins_needed,
+    probe_cols,
+    params: idx - sql_offset,
+    fan_out,
+  }
 }
 
 fn resolve_target(
-    column: &str,
-    relations: &[Relation],
-    joins_needed: &mut Vec<String>,
-    probe_cols: &mut Vec<String>,
-    fan_out: &mut bool,
+  column: &str,
+  relations: &[Relation],
+  joins_needed: &mut Vec<String>,
+  probe_cols: &mut Vec<String>,
+  fan_out: &mut bool,
 ) -> String {
-    for r in relations {
-        let prefix = format!("{}_", r.table);
-        if let Some(col) = column.strip_prefix(prefix.as_str()) {
-            // `belongs_to`'s "{table}_id" is the FK column itself — query it directly, no
-            // JOIN needed. Other kinds have no such shortcut: there's no FK on this table to
-            // resolve to, so even the "id" column must go through the JOIN.
-            if r.kind == RelationKind::BelongsTo && col == "id" {
-                probe_cols.push(r.fk.clone());
-                return r.fk.clone();
-            }
-            if !joins_needed.contains(&r.table) {
-                joins_needed.push(r.table.clone());
-            }
-            if r.kind.fans_out() {
-                *fan_out = true;
-            }
-            return format!("\"{}\".{col}", r.table);
-        }
+  for r in relations {
+    let prefix = format!("{}_", r.table);
+    if let Some(col) = column.strip_prefix(prefix.as_str()) {
+      // `belongs_to`'s "{table}_id" is the FK column itself — query it directly, no
+      // JOIN needed. Other kinds have no such shortcut: there's no FK on this table to
+      // resolve to, so even the "id" column must go through the JOIN.
+      if r.kind == RelationKind::BelongsTo && col == "id" {
+        probe_cols.push(r.fk.clone());
+        return r.fk.clone();
+      }
+      if !joins_needed.contains(&r.table) {
+        joins_needed.push(r.table.clone());
+      }
+      if r.kind.fans_out() {
+        *fan_out = true;
+      }
+      return format!("\"{}\".{col}", r.table);
     }
-    probe_cols.push(column.to_string());
-    column.to_string()
+  }
+  probe_cols.push(column.to_string());
+  column.to_string()
 }
 
 pub fn join_clauses(table: &str, needed: &[String], relations: &[Relation]) -> String {
-    needed
+  needed
         .iter()
         .filter_map(|name| relations.iter().find(|r| &r.table == name))
         .map(|r| match r.kind {
@@ -293,244 +313,269 @@ pub fn join_clauses(table: &str, needed: &[String], relations: &[Relation]) -> S
 
 /// "col_desc" → ("col DESC", "col"), "col_asc" → ("col ASC", "col"), "col" → ("col", "col")
 pub fn format_order_col(s: &str) -> (String, String) {
-    if let Some(col) = s.strip_suffix("_desc") {
-        (format!("{col} DESC"), col.to_string())
-    } else if let Some(col) = s.strip_suffix("_asc") {
-        (format!("{col} ASC"), col.to_string())
-    } else {
-        (s.to_string(), s.to_string())
-    }
+  if let Some(col) = s.strip_suffix("_desc") {
+    (format!("{col} DESC"), col.to_string())
+  } else if let Some(col) = s.strip_suffix("_asc") {
+    (format!("{col} ASC"), col.to_string())
+  } else {
+    (s.to_string(), s.to_string())
+  }
 }
 
 /// Splits "filter_part_order_by_col_desc" → ("filter_part", Some(("ORDER BY col DESC", "col")))
 pub fn split_order(field_str: &str) -> (&str, Option<(String, String)>) {
-    if let Some(pos) = field_str.find("_order_by_") {
-        let filter = &field_str[..pos];
-        let order = &field_str[pos + "_order_by_".len()..];
-        let (rendered, col) = format_order_col(order);
-        (filter, Some((format!("ORDER BY {rendered}"), col)))
-    } else {
-        (field_str, None)
-    }
+  if let Some(pos) = field_str.find("_order_by_") {
+    let filter = &field_str[..pos];
+    let order = &field_str[pos + "_order_by_".len()..];
+    let (rendered, col) = format_order_col(order);
+    (filter, Some((format!("ORDER BY {rendered}"), col)))
+  } else {
+    (field_str, None)
+  }
 }
 
 /// Strips "_this_week" suffix → (remaining, true) or (original, false)
 pub fn split_this_week(field_str: &str) -> (&str, bool) {
-    match field_str.strip_suffix("_this_week") {
-        Some(rest) => (rest, true),
-        None => (field_str, false),
-    }
+  match field_str.strip_suffix("_this_week") {
+    Some(rest) => (rest, true),
+    None => (field_str, false),
+  }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+  use super::*;
 
-    fn cond(col: &str, op: Op, connector: Option<Connector>) -> Condition {
-        Condition { column: col.to_string(), op, connector }
+  fn cond(col: &str, op: Op, connector: Option<Connector>) -> Condition {
+    Condition {
+      column: col.to_string(),
+      op,
+      connector,
     }
+  }
 
-    fn pg_placeholder(idx: usize) -> String {
-        format!("${idx}")
-    }
+  fn pg_placeholder(idx: usize) -> String {
+    format!("${idx}")
+  }
 
-    #[test]
-    fn plain_field() {
-        assert_eq!(parse_conditions("user_id").unwrap(), vec![cond("user_id", Op::Eq, None)]);
-    }
+  #[test]
+  fn plain_field() {
+    assert_eq!(
+      parse_conditions("user_id").unwrap(),
+      vec![cond("user_id", Op::Eq, None)]
+    );
+  }
 
-    #[test]
-    fn and_or_chain() {
-        assert_eq!(
-            parse_conditions("username_or_email").unwrap(),
-            vec![cond("username", Op::Eq, Some(Connector::Or)), cond("email", Op::Eq, None)]
-        );
-        assert_eq!(
-            parse_conditions("challenge_id_and_user_id").unwrap(),
-            vec![
-                cond("challenge_id", Op::Eq, Some(Connector::And)),
-                cond("user_id", Op::Eq, None)
-            ]
-        );
-    }
+  #[test]
+  fn and_or_chain() {
+    assert_eq!(
+      parse_conditions("username_or_email").unwrap(),
+      vec![
+        cond("username", Op::Eq, Some(Connector::Or)),
+        cond("email", Op::Eq, None)
+      ]
+    );
+    assert_eq!(
+      parse_conditions("challenge_id_and_user_id").unwrap(),
+      vec![
+        cond("challenge_id", Op::Eq, Some(Connector::And)),
+        cond("user_id", Op::Eq, None)
+      ]
+    );
+  }
 
-    #[test]
-    fn op_suffixes() {
-        assert_eq!(parse_conditions("id_in").unwrap(), vec![cond("id", Op::In, None)]);
-        assert_eq!(parse_conditions("elo_gte").unwrap(), vec![cond("elo", Op::Gte, None)]);
-        assert_eq!(parse_conditions("elo_gt").unwrap(), vec![cond("elo", Op::Gt, None)]);
-        assert_eq!(parse_conditions("name_like").unwrap(), vec![cond("name", Op::Like, None)]);
-        assert_eq!(
-            parse_conditions("deleted_at_is_null").unwrap(),
-            vec![cond("deleted_at", Op::IsNull, None)]
-        );
-        assert_eq!(
-            parse_conditions("deleted_at_is_not_null").unwrap(),
-            vec![cond("deleted_at", Op::IsNotNull, None)]
-        );
-    }
+  #[test]
+  fn op_suffixes() {
+    assert_eq!(
+      parse_conditions("id_in").unwrap(),
+      vec![cond("id", Op::In, None)]
+    );
+    assert_eq!(
+      parse_conditions("elo_gte").unwrap(),
+      vec![cond("elo", Op::Gte, None)]
+    );
+    assert_eq!(
+      parse_conditions("elo_gt").unwrap(),
+      vec![cond("elo", Op::Gt, None)]
+    );
+    assert_eq!(
+      parse_conditions("name_like").unwrap(),
+      vec![cond("name", Op::Like, None)]
+    );
+    assert_eq!(
+      parse_conditions("deleted_at_is_null").unwrap(),
+      vec![cond("deleted_at", Op::IsNull, None)]
+    );
+    assert_eq!(
+      parse_conditions("deleted_at_is_not_null").unwrap(),
+      vec![cond("deleted_at", Op::IsNotNull, None)]
+    );
+  }
 
-    #[test]
-    fn mixed_ops_and_connectors() {
-        assert_eq!(
-            parse_conditions("user_id_and_deleted_at_is_null").unwrap(),
-            vec![
-                cond("user_id", Op::Eq, Some(Connector::And)),
-                cond("deleted_at", Op::IsNull, None)
-            ]
-        );
-        assert_eq!(
-            parse_conditions("id_in_and_elo_gt").unwrap(),
-            vec![cond("id", Op::In, Some(Connector::And)), cond("elo", Op::Gt, None)]
-        );
-    }
+  #[test]
+  fn mixed_ops_and_connectors() {
+    assert_eq!(
+      parse_conditions("user_id_and_deleted_at_is_null").unwrap(),
+      vec![
+        cond("user_id", Op::Eq, Some(Connector::And)),
+        cond("deleted_at", Op::IsNull, None)
+      ]
+    );
+    assert_eq!(
+      parse_conditions("id_in_and_elo_gt").unwrap(),
+      vec![
+        cond("id", Op::In, Some(Connector::And)),
+        cond("elo", Op::Gt, None)
+      ]
+    );
+  }
 
-    #[test]
-    fn where_placeholders_skip_no_param_ops() {
-        let conds = parse_conditions("user_id_and_deleted_at_is_null_and_elo_gt").unwrap();
-        let wc = build_where(&conds, &[], 0, 0, &pg_placeholder);
-        assert_eq!(wc.sql, "user_id = $1 AND deleted_at IS NULL AND elo > $2");
-        assert_eq!(wc.params, 2);
-        assert_eq!(wc.probe_cols, vec!["user_id", "deleted_at", "elo"]);
-        assert!(!wc.has_in);
-    }
+  #[test]
+  fn where_placeholders_skip_no_param_ops() {
+    let conds = parse_conditions("user_id_and_deleted_at_is_null_and_elo_gt").unwrap();
+    let wc = build_where(&conds, &[], 0, 0, &pg_placeholder);
+    assert_eq!(wc.sql, "user_id = $1 AND deleted_at IS NULL AND elo > $2");
+    assert_eq!(wc.params, 2);
+    assert_eq!(wc.probe_cols, vec!["user_id", "deleted_at", "elo"]);
+    assert!(!wc.has_in);
+  }
 
-    #[test]
-    fn where_with_offset() {
-        let conds = parse_conditions("id").unwrap();
-        let wc = build_where(&conds, &[], 2, 0, &pg_placeholder);
-        assert_eq!(wc.sql, "id = $3");
-        assert_eq!(wc.params, 1);
-    }
+  #[test]
+  fn where_with_offset() {
+    let conds = parse_conditions("id").unwrap();
+    let wc = build_where(&conds, &[], 2, 0, &pg_placeholder);
+    assert_eq!(wc.sql, "id = $3");
+    assert_eq!(wc.params, 1);
+  }
 
-    fn belongs_to(table: &str) -> Relation {
-        Relation {
-            table: table.to_string(),
-            kind: RelationKind::BelongsTo,
-            fk: format!("{table}_id"),
-            other_fk: None,
-            through: None,
-        }
+  fn belongs_to(table: &str) -> Relation {
+    Relation {
+      table: table.to_string(),
+      kind: RelationKind::BelongsTo,
+      fk: format!("{table}_id"),
+      other_fk: None,
+      through: None,
     }
+  }
 
-    fn has_many(table: &str, this_table: &str) -> Relation {
-        Relation {
-            table: table.to_string(),
-            kind: RelationKind::HasMany,
-            fk: format!("{this_table}_id"),
-            other_fk: None,
-            through: None,
-        }
+  fn has_many(table: &str, this_table: &str) -> Relation {
+    Relation {
+      table: table.to_string(),
+      kind: RelationKind::HasMany,
+      fk: format!("{this_table}_id"),
+      other_fk: None,
+      through: None,
     }
+  }
 
-    #[test]
-    fn join_resolution() {
-        let relations = vec![belongs_to("user")];
-        let conds = parse_conditions("user_email_and_user_id").unwrap();
-        let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
-        assert_eq!(wc.sql, "\"user\".email = $1 AND user_id = $2");
-        assert_eq!(wc.joins_needed, vec!["user"]);
-        // joined column not probed; FK shortcut column is
-        assert_eq!(wc.probe_cols, vec!["user_id"]);
-        assert!(!wc.fan_out);
-    }
+  #[test]
+  fn join_resolution() {
+    let relations = vec![belongs_to("user")];
+    let conds = parse_conditions("user_email_and_user_id").unwrap();
+    let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
+    assert_eq!(wc.sql, "\"user\".email = $1 AND user_id = $2");
+    assert_eq!(wc.joins_needed, vec!["user"]);
+    // joined column not probed; FK shortcut column is
+    assert_eq!(wc.probe_cols, vec!["user_id"]);
+    assert!(!wc.fan_out);
+  }
 
-    #[test]
-    fn has_one_and_has_many_always_join() {
-        // Unlike belongs_to, has_one/has_many have no FK shortcut — even the "id" column
-        // must be resolved through the JOIN, since there's no FK on this table to fall
-        // back to.
-        let relations = vec![
-            Relation {
-                table: "profile".to_string(),
-                kind: RelationKind::HasOne,
-                fk: "user_id".to_string(),
-                other_fk: None,
-                through: None,
-            },
-            has_many("order", "user"),
-        ];
-        let conds = parse_conditions("profile_id_and_order_status").unwrap();
-        let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
-        assert_eq!(wc.sql, "\"profile\".id = $1 AND \"order\".status = $2");
-        assert_eq!(wc.joins_needed, vec!["profile", "order"]);
-        assert!(wc.probe_cols.is_empty());
-        assert!(wc.fan_out);
-    }
+  #[test]
+  fn has_one_and_has_many_always_join() {
+    // Unlike belongs_to, has_one/has_many have no FK shortcut — even the "id" column
+    // must be resolved through the JOIN, since there's no FK on this table to fall
+    // back to.
+    let relations = vec![
+      Relation {
+        table: "profile".to_string(),
+        kind: RelationKind::HasOne,
+        fk: "user_id".to_string(),
+        other_fk: None,
+        through: None,
+      },
+      has_many("order", "user"),
+    ];
+    let conds = parse_conditions("profile_id_and_order_status").unwrap();
+    let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
+    assert_eq!(wc.sql, "\"profile\".id = $1 AND \"order\".status = $2");
+    assert_eq!(wc.joins_needed, vec!["profile", "order"]);
+    assert!(wc.probe_cols.is_empty());
+    assert!(wc.fan_out);
+  }
 
-    #[test]
-    fn belongs_to_many_renders_both_joins() {
-        let relations = vec![Relation {
-            table: "tag".to_string(),
-            kind: RelationKind::BelongsToMany,
-            fk: "post_id".to_string(),
-            other_fk: Some("tag_id".to_string()),
-            through: Some("post_tag".to_string()),
-        }];
-        let conds = parse_conditions("tag_name").unwrap();
-        let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
-        assert_eq!(wc.sql, "\"tag\".name = $1");
-        assert!(wc.fan_out);
-        assert_eq!(
-            join_clauses("post", &wc.joins_needed, &relations),
-            "JOIN \"post_tag\" ON \"post_tag\".post_id = \"post\".id JOIN \"tag\" ON \"tag\".id = \"post_tag\".tag_id"
-        );
-    }
+  #[test]
+  fn belongs_to_many_renders_both_joins() {
+    let relations = vec![Relation {
+      table: "tag".to_string(),
+      kind: RelationKind::BelongsToMany,
+      fk: "post_id".to_string(),
+      other_fk: Some("tag_id".to_string()),
+      through: Some("post_tag".to_string()),
+    }];
+    let conds = parse_conditions("tag_name").unwrap();
+    let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
+    assert_eq!(wc.sql, "\"tag\".name = $1");
+    assert!(wc.fan_out);
+    assert_eq!(
+      join_clauses("post", &wc.joins_needed, &relations),
+      "JOIN \"post_tag\" ON \"post_tag\".post_id = \"post\".id JOIN \"tag\" ON \"tag\".id = \"post_tag\".tag_id"
+    );
+  }
 
-    #[test]
-    fn fan_out_false_for_belongs_to_and_has_one() {
-        let relations = vec![
-            belongs_to("user"),
-            Relation {
-                table: "profile".to_string(),
-                kind: RelationKind::HasOne,
-                fk: "user_id".to_string(),
-                other_fk: None,
-                through: None,
-            },
-        ];
-        let conds = parse_conditions("user_email_and_profile_bio").unwrap();
-        let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
-        assert!(!wc.fan_out);
-    }
+  #[test]
+  fn fan_out_false_for_belongs_to_and_has_one() {
+    let relations = vec![
+      belongs_to("user"),
+      Relation {
+        table: "profile".to_string(),
+        kind: RelationKind::HasOne,
+        fk: "user_id".to_string(),
+        other_fk: None,
+        through: None,
+      },
+    ];
+    let conds = parse_conditions("user_email_and_profile_bio").unwrap();
+    let wc = build_where(&conds, &relations, 0, 0, &pg_placeholder);
+    assert!(!wc.fan_out);
+  }
 
-    #[test]
-    fn order_and_week_suffixes() {
-        let (filter, order) = split_order("user_id_this_week_order_by_created_at_desc");
-        assert_eq!(filter, "user_id_this_week");
-        let (order_sql, order_col) = order.unwrap();
-        assert_eq!(order_sql, "ORDER BY created_at DESC");
-        assert_eq!(order_col, "created_at");
-        let (filter, week) = split_this_week(filter);
-        assert_eq!(filter, "user_id");
-        assert!(week);
-    }
+  #[test]
+  fn order_and_week_suffixes() {
+    let (filter, order) = split_order("user_id_this_week_order_by_created_at_desc");
+    assert_eq!(filter, "user_id_this_week");
+    let (order_sql, order_col) = order.unwrap();
+    assert_eq!(order_sql, "ORDER BY created_at DESC");
+    assert_eq!(order_col, "created_at");
+    let (filter, week) = split_this_week(filter);
+    assert_eq!(filter, "user_id");
+    assert!(week);
+  }
 
-    #[test]
-    fn empty_column_is_error() {
-        assert!(parse_conditions("_and_x").is_err());
-        assert!(parse_conditions("x_and_").is_err());
-    }
+  #[test]
+  fn empty_column_is_error() {
+    assert!(parse_conditions("_and_x").is_err());
+    assert!(parse_conditions("x_and_").is_err());
+  }
 
-    #[test]
-    fn in_condition_sets_has_in_and_chunks() {
-        let conds = parse_conditions("id_in_and_elo_gt").unwrap();
-        let wc = build_where(&conds, &[], 0, 0, &pg_placeholder);
-        assert!(wc.has_in);
-        assert_eq!(wc.params, 2);
-        match &wc.chunks[..] {
-            [
-                WhereChunk::Literal(l0),
-                WhereChunk::InList(0),
-                WhereChunk::Literal(conn),
-                WhereChunk::Literal(l1),
-                WhereChunk::Bind(1),
-            ] => {
-                assert_eq!(l0, "id IN ");
-                assert_eq!(conn, " AND ");
-                assert_eq!(l1, "elo > ");
-            }
-            other => panic!("unexpected chunk shape: {other:?}"),
-        }
+  #[test]
+  fn in_condition_sets_has_in_and_chunks() {
+    let conds = parse_conditions("id_in_and_elo_gt").unwrap();
+    let wc = build_where(&conds, &[], 0, 0, &pg_placeholder);
+    assert!(wc.has_in);
+    assert_eq!(wc.params, 2);
+    match &wc.chunks[..] {
+      [
+        WhereChunk::Literal(l0),
+        WhereChunk::InList(0),
+        WhereChunk::Literal(conn),
+        WhereChunk::Literal(l1),
+        WhereChunk::Bind(1),
+      ] => {
+        assert_eq!(l0, "id IN ");
+        assert_eq!(conn, " AND ");
+        assert_eq!(l1, "elo > ");
+      }
+      other => panic!("unexpected chunk shape: {other:?}"),
     }
+  }
 }

@@ -311,11 +311,14 @@ fn validate_attr_targets(
     errors: &mut Vec<TokenStream2>,
 ) {
     for (method, (_, span)) in unique_map {
-        if method != "upsert" {
+        if method != "upsert" && method != "upsert_all" {
             errors.push(
                 syn::Error::new(
                     *span,
-                    format!("`#[unique(...)]` on `{method}` has no effect; it only applies to `upsert`"),
+                    format!(
+                        "`#[unique(...)]` on `{method}` has no effect; it only applies to \
+                         `upsert`/`upsert_all`"
+                    ),
                 )
                 .to_compile_error(),
             );
@@ -580,6 +583,9 @@ fn gen_body(
     } else if dispatch_name == "upsert" {
         no_order_by(sig, order_cols, name)?;
         gen_upsert(sig, ctx, exec, unique_col)
+    } else if dispatch_name == "upsert_all" {
+        no_order_by(sig, order_cols, name)?;
+        gen_upsert_all(sig, ctx, exec, unique_col)
     } else if dispatch_name == "update" {
         no_order_by(sig, order_cols, name)?;
         gen_delegated(sig, ctx, exec, "update", quote!(__sqlx_update_in))
@@ -610,7 +616,7 @@ fn gen_body(
                 "no codegen rule for `{name}`; expected one of: find_by_*, find_all, \
                  find_all_by_*, find_all_order_by_*, find_random_by_*, find_all_<bool_field>, \
                  count_by_*, exists_by_*, delete_by_*, set_*_by_*, insert, insert_all, \
-                 insert_or_ignore, upsert, update, pool — or provide a method body"
+                 insert_or_ignore, upsert, upsert_all, update, pool — or provide a method body"
             ),
         ))
     }
@@ -711,6 +717,12 @@ fn fetch_method(ret: &ReturnType) -> TokenStream2 {
         }
     }
     quote!(fetch_one)
+}
+
+/// True for `sqlx::Result<Vec<_>>` — used to reject `Vec` returns on `find_by_*`/
+/// `find_random_by_*`, which fetch at most one row.
+fn returns_vec(ret: &ReturnType) -> bool {
+    matches!(result_ok_type(ret), Some(ok) if generic_arg(&ok, "Vec").is_some())
 }
 
 /// Row type for column probing: Result<Row>, Result<Option<Row>>, Result<Vec<Row>>.
@@ -819,6 +831,13 @@ fn gen_filtered(
         return Err(syn::Error::new(
             sig.ident.span(),
             "`#[order_by(...)]` is only supported on `find_by_*` (not find_random_by_/count_by_/exists_by_/delete_by_)",
+        ));
+    }
+    if matches!(kind, Kind::One | Kind::Random) && returns_vec(&sig.output) {
+        return Err(syn::Error::new(
+            sig.ident.span(),
+            "`find_by_*`/`find_random_by_*` return at most one row — return `Option<T>` or `T`, \
+             not `Vec<T>`; use `find_all_by_*` for a list",
         ));
     }
     let conds = dsl::parse_conditions(field_str)
@@ -1314,6 +1333,39 @@ fn gen_upsert(
     let probe = make_probe(sig.ident.span(), &values_ty, &[conflict_col.to_string()]);
     Ok((
         quote! { #values.__sqlx_upsert_into(#table, #conflict_col, #exec).await },
+        probe,
+    ))
+}
+
+fn gen_upsert_all(
+    sig: &Signature,
+    ctx: &Ctx,
+    exec: TokenStream2,
+    unique_col: Option<&str>,
+) -> syn::Result<(TokenStream2, TokenStream2)> {
+    let conflict_col = unique_col.ok_or_else(|| {
+        syn::Error::new(
+            sig.ident.span(),
+            "`upsert_all` requires `#[unique(col)]` on the method to name the conflict column",
+        )
+    })?;
+    let (values, values_ty) = first_value_param(sig, "upsert_all")?;
+    let elem_ty = generic_arg(&values_ty, "Vec").ok_or_else(|| {
+        syn::Error::new(
+            sig.ident.span(),
+            "`upsert_all` requires a `Vec<T>` values parameter where T derives SqlxInsert",
+        )
+    })?;
+    let table = ctx.table;
+    // Conflict column must be a field of the values struct — probe it too.
+    let probe = make_probe(sig.ident.span(), &elem_ty, &[conflict_col.to_string()]);
+    let method = if returns_unit(&sig.output) {
+        quote!(__sqlx_upsert_all_into_void)
+    } else {
+        quote!(__sqlx_upsert_all_into)
+    };
+    Ok((
+        quote! { <#elem_ty>::#method(#values, #table, #conflict_col, #exec).await },
         probe,
     ))
 }

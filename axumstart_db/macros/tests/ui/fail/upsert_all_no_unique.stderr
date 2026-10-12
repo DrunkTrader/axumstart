@@ -1,0 +1,5 @@
+error: `upsert_all` requires `#[unique(col)]` on the method to name the conflict column
+  --> tests/ui/fail/upsert_all_no_unique.rs:17:14
+   |
+17 |     async fn upsert_all(&self, values: Vec<UserValues>) -> sqlx::Result<Vec<UserRow>>;
+   |              ^^^^^^^^^^
